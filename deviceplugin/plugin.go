@@ -152,6 +152,15 @@ Outer:
 		}, nil
 }
 
+var registerBackoffSchedule = []time.Duration{
+	1 * time.Second,
+	1 * time.Second,
+	2 * time.Second,
+	3 * time.Second,
+	5 * time.Second,
+	8 * time.Second,
+}
+
 // runOnce runs the plugin one time until an error is encountered,
 // until the socket is removed, or until the context is cancelled.
 func (p *plugin) runOnce(ctx context.Context) error {
@@ -173,21 +182,14 @@ func (p *plugin) runOnce(ctx context.Context) error {
 		ctx, cancel := context.WithCancel(ctx)
 		g.Add(func() error {
 			defer cancel()
-			_ = level.Info(p.logger).Log("msg", "waiting for the gRPC server to be ready")
-			//nolint:all keep using deprecated gRPC functions for now
-			c, err := grpc.DialContext(ctx, p.socket, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock(),
-				grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-					return (&net.Dialer{}).DialContext(ctx, "unix", addr)
-				}),
-			)
+			var err error
+			for _, backoff := range registerBackoffSchedule {
+				if err = p.registerWithKubelet(); err == nil {
+					break
+				}
+				time.Sleep(backoff)
+			}
 			if err != nil {
-				return fmt.Errorf("failed to create connection to local gRPC server: %v", err)
-			}
-			if err := c.Close(); err != nil {
-				return fmt.Errorf("failed to close connection to local gRPC server: %v", err)
-			}
-			_ = level.Info(p.logger).Log("msg", "the gRPC server is ready")
-			if err := p.registerWithKubelet(); err != nil {
 				return fmt.Errorf("failed to register with kubelet: %v", err)
 			}
 			<-ctx.Done()
@@ -225,12 +227,14 @@ func (p *plugin) runOnce(ctx context.Context) error {
 
 func (p *plugin) registerWithKubelet() error {
 	_ = level.Info(p.logger).Log("msg", "registering plugin with kubelet")
-	//nolint:all keep using deprecated gRPC functions for now
-	conn, err := grpc.Dial(filepath.Join(p.pluginDir, filepath.Base(v1beta1.KubeletSocket)), grpc.WithTransportCredentials(insecure.NewCredentials()),
+	conn, err := grpc.NewClient(
+		filepath.Join(p.pluginDir, filepath.Base(v1beta1.KubeletSocket)),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
 			d := &net.Dialer{}
 			return d.DialContext(ctx, "unix", addr)
-		}))
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to connect to kubelet: %v", err)
 	}
