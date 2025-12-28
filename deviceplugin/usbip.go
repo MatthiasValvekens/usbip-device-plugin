@@ -23,23 +23,17 @@ import (
 	"time"
 
 	"github.com/MatthiasValvekens/usbip-device-plugin/usbip"
+	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
+	v1 "k8s.io/kubelet/pkg/apis/podresources/v1"
 )
 
 const (
 	deviceCheckInterval = 5 * time.Second
 )
-
-// device wraps the v1.beta1.Device type to add context about
-// the device needed by the USBIPPlugin.
-type deviceState struct {
-	*v1beta1.Device
-	deviceSpecs []*v1beta1.DeviceSpec
-	mounts      []*v1beta1.Mount
-}
 
 type KnownDevice struct {
 	Target         usbip.Target `json:"target"`
@@ -50,8 +44,10 @@ type KnownDevice struct {
 
 type USBIPPlugin struct {
 	v1beta1.UnimplementedDevicePluginServer
+	resource        string
 	knownDevices    map[string]KnownDevice
 	attachedDevices map[string]usbip.AttachedDevice
+	kubeletSocket   string
 	logger          log.Logger
 	mu              sync.Mutex
 
@@ -92,10 +88,11 @@ func NewPluginForDeviceGroup(knownDevices []*KnownDevice, resourceName string, p
 		id := fmt.Sprintf("%x", sha256.Sum256(idJson))
 		devices[id] = dev
 	}
-
 	p := &USBIPPlugin{
+		resource:        resourceName,
 		knownDevices:    devices,
 		attachedDevices: map[string]usbip.AttachedDevice{},
+		kubeletSocket:   kubeletSocketPath(pluginDir),
 		logger:          logger,
 		deviceGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "usbip_device_plugin_available_devices",
@@ -156,6 +153,64 @@ func (up *USBIPPlugin) refreshTarget(target usbip.Target) (bool, error) {
 	return !changed, err
 }
 
+func (up *USBIPPlugin) releaseDevices() error {
+	if len(up.attachedDevices) == 0 {
+		// nothing to do
+		return nil
+	}
+
+	conn, err := kubeletClient(kubeletSocketPath(up.kubeletSocket))
+	if err != nil {
+		return fmt.Errorf("failed to connect to kubelet: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	client := v1.NewPodResourcesListerClient(conn)
+	usage, err := client.List(context.TODO(), &v1.ListPodResourcesRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to interrogate kubelet about resource usage: %v", err)
+	}
+	witnesses := make(map[string]bool, len(up.attachedDevices))
+	for _, podResources := range usage.GetPodResources() {
+		for _, containerResources := range podResources.GetContainers() {
+			for _, containerDevices := range containerResources.GetDevices() {
+				if containerDevices.ResourceName != up.resource {
+					continue
+				}
+				for _, devId := range containerDevices.DeviceIds {
+					witnesses[devId] = true
+				}
+			}
+		}
+	}
+
+	toRemove := make([]string, 0, len(witnesses))
+
+	for devId, attachedDevice := range up.attachedDevices {
+		_, inUse := witnesses[devId]
+		if !inUse {
+			_ = up.logger.Log("msg", fmt.Sprintf("detaching device %s of resource %s", devId, up.resource))
+			err = usbip.Detach(attachedDevice.Port)
+			if err != nil {
+				// TODO log error properly
+				_ = up.logger.Log("msg", fmt.Sprintf("failed to detach %s of resource %s", devId, up.resource))
+				continue
+			}
+			toRemove = append(toRemove, devId)
+		}
+	}
+
+	for _, devId := range toRemove {
+		delete(up.attachedDevices, devId)
+	}
+
+	if err != nil {
+		return errors.Wrapf(err, "There were errors detaching some devices of resource %s", up.resource)
+	}
+
+	return nil
+}
+
 // refreshDevices updates the devices available to the
 // generic device plugin and returns a boolean indicating
 // if everything is OK, i.e. if the devices are the same ones as before.
@@ -163,7 +218,8 @@ func (up *USBIPPlugin) refreshDevices() (bool, error) {
 	up.mu.Lock()
 	defer up.mu.Unlock()
 	changed := false
-	var err error = nil
+	err := up.releaseDevices()
+	// even if the release fails, go on
 	for _, target := range up.Targets() {
 		var targetUnchanged bool
 		targetUnchanged, err = up.refreshTarget(target)

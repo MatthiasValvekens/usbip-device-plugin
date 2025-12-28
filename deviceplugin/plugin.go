@@ -28,7 +28,6 @@ import (
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
 
@@ -49,11 +48,11 @@ type Plugin interface {
 // of the device plugin server.
 type plugin struct {
 	v1beta1.DevicePluginServer
-	resource   string
-	pluginDir  string
-	socket     string
-	grpcServer *grpc.Server
-	logger     log.Logger
+	resource     string
+	pluginDir    string
+	pluginSocket string
+	grpcServer   *grpc.Server
+	logger       log.Logger
 
 	// metrics
 	restartsTotal prometheus.Counter
@@ -68,7 +67,7 @@ func NewPlugin(resource string, pluginDir string, dps v1beta1.DevicePluginServer
 		DevicePluginServer: dps,
 		resource:           resource,
 		pluginDir:          pluginDir,
-		socket:             filepath.Join(pluginDir, fmt.Sprintf("%s-%s-%d.sock", socketPrefix, base64.StdEncoding.EncodeToString([]byte(resource)), time.Now().Unix())),
+		pluginSocket:       filepath.Join(pluginDir, fmt.Sprintf("%s-%s-%d.sock", socketPrefix, base64.StdEncoding.EncodeToString([]byte(resource)), time.Now().Unix())),
 		logger:             logger,
 		restartsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "device_plugin_restarts_total",
@@ -111,10 +110,10 @@ Outer:
 // This makes it convenient to run in a run.Group.
 func (p *plugin) serve(ctx context.Context) (func() error, func(error), error) {
 	// Run the gRPC server.
-	_ = level.Info(p.logger).Log("msg", "listening on Unix socket", "socket", p.socket)
-	l, err := net.Listen("unix", p.socket)
+	_ = level.Info(p.logger).Log("msg", "listening on Unix pluginSocket", "pluginSocket", p.pluginSocket)
+	l, err := net.Listen("unix", p.pluginSocket)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to listen on Unix socket %q: %v", p.socket, err)
+		return nil, nil, fmt.Errorf("failed to listen on Unix pluginSocket %q: %v", p.pluginSocket, err)
 	}
 
 	ch := make(chan error)
@@ -162,7 +161,7 @@ var registerBackoffSchedule = []time.Duration{
 }
 
 // runOnce runs the plugin one time until an error is encountered,
-// until the socket is removed, or until the context is cancelled.
+// until the pluginSocket is removed, or until the context is cancelled.
 func (p *plugin) runOnce(ctx context.Context) error {
 	p.grpcServer = grpc.NewServer()
 	v1beta1.RegisterDevicePluginServer(p.grpcServer, p.DevicePluginServer)
@@ -200,7 +199,7 @@ func (p *plugin) runOnce(ctx context.Context) error {
 	}
 
 	{
-		// Watch the socket.
+		// Watch the pluginSocket.
 		t := time.NewTicker(socketCheckInterval)
 		ctx, cancel := context.WithCancel(ctx)
 		defer t.Stop()
@@ -208,8 +207,8 @@ func (p *plugin) runOnce(ctx context.Context) error {
 			for {
 				select {
 				case <-t.C:
-					if _, err := os.Lstat(p.socket); err != nil {
-						return fmt.Errorf("failed to stat plugin socket %q: %v", p.socket, err)
+					if _, err := os.Lstat(p.pluginSocket); err != nil {
+						return fmt.Errorf("failed to stat plugin pluginSocket %q: %v", p.pluginSocket, err)
 					}
 				case <-ctx.Done():
 					return nil
@@ -227,14 +226,7 @@ func (p *plugin) runOnce(ctx context.Context) error {
 
 func (p *plugin) registerWithKubelet() error {
 	_ = level.Info(p.logger).Log("msg", "registering plugin with kubelet")
-	conn, err := grpc.NewClient(
-		filepath.Join(p.pluginDir, filepath.Base(v1beta1.KubeletSocket)),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-			d := &net.Dialer{}
-			return d.DialContext(ctx, "unix", addr)
-		}),
-	)
+	conn, err := kubeletClient(kubeletSocketPath(p.pluginDir))
 	if err != nil {
 		return fmt.Errorf("failed to connect to kubelet: %v", err)
 	}
@@ -243,7 +235,7 @@ func (p *plugin) registerWithKubelet() error {
 	client := v1beta1.NewRegistrationClient(conn)
 	request := &v1beta1.RegisterRequest{
 		Version:      v1beta1.Version,
-		Endpoint:     filepath.Base(p.socket),
+		Endpoint:     filepath.Base(p.pluginSocket),
 		ResourceName: p.resource,
 	}
 	if _, err = client.Register(context.Background(), request); err != nil {
@@ -253,8 +245,8 @@ func (p *plugin) registerWithKubelet() error {
 }
 
 func (p *plugin) cleanUp() error {
-	if err := os.Remove(p.socket); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to remove socket: %v", err)
+	if err := os.Remove(p.pluginSocket); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove pluginSocket: %v", err)
 	}
 	return nil
 }
