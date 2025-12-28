@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	deviceCheckInterval = 5 * time.Second
+	deviceCheckInterval = 30 * time.Second
 )
 
 type KnownDevice struct {
@@ -124,7 +124,14 @@ func (up *USBIPPlugin) refreshTarget(target usbip.Target) (bool, error) {
 	lst, err := conn.List()
 
 	changed := false
-	for _, kd := range up.knownDevices {
+	for devId, kd := range up.knownDevices {
+		_, attached := up.attachedDevices[devId]
+		// no use checking the returned devices for one that is already attached to us,
+		// it won't be part of the response anyway
+		if attached {
+			continue
+		}
+
 		if kd.Target != target {
 			continue
 		}
@@ -143,12 +150,18 @@ func (up *USBIPPlugin) refreshTarget(target usbip.Target) (bool, error) {
 			}
 			found = true
 			changed = changed || (kd.readProperties != cand)
+			if changed {
+				_ = up.logger.Log("msg", "found device or device changed properties", "target", kd.Target, "selector", selector, "found", cand)
+			}
 			kd.readProperties = cand
 			break
 		}
 		wasAvailable := kd.available
 		changed = changed || (wasAvailable != found)
 		kd.available = found
+		if wasAvailable && !found {
+			_ = up.logger.Log("msg", "previously available device no longer available (in use by another node?)", "target", kd.Target, "selector", selector)
+		}
 	}
 
 	return !changed, err
