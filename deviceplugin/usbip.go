@@ -36,8 +36,9 @@ const (
 )
 
 type KnownDevice struct {
-	Target         usbip.Target `json:"target"`
-	Selector       usbip.Device `json:"selector"`
+	Target         usbip.Target         `json:"target"`
+	Selector       usbip.Device         `json:"selector"`
+	ExtraDevices   []v1beta1.DeviceSpec `json:"extras"`
 	readProperties usbip.Device
 	available      bool
 }
@@ -286,6 +287,9 @@ func (up *USBIPPlugin) Allocate(_ context.Context, req *v1beta1.AllocateRequest)
 					Permissions:   "mrw",
 				},
 			)
+			for _, extraDev := range dev.ExtraDevices {
+				resp.Devices = append(resp.Devices, &extraDev)
+			}
 		}
 		res.ContainerResponses = append(res.ContainerResponses, resp)
 	}
