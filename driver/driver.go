@@ -42,13 +42,6 @@ func USBIP_VHCIDriverClose() {
 	C.usbip_vhci_driver_close()
 }
 
-func USBIP_VHCIRefreshDeviceList() error {
-	if C.usbip_vhci_refresh_device_list() != 0 {
-		return errors.New("usbip_vhci_refresh_device_list failed")
-	}
-	return nil
-}
-
 func USBIP_VHCIGetFreePort(speed uint32) (uint8, error) {
 	port := C.usbip_vhci_get_free_port(C.uint32_t(speed))
 	if port == -1 {
@@ -82,23 +75,12 @@ func USBIP_VHCIAttachDevice(port uint8, conn *net.TCPConn, devid uint32, speed u
 }
 
 func USBIP_VHCIDescribeAttached(port uint8) (*USBIPDeviceDescription, error) {
-
-	var importedDevPtr = C.usbip_vhci_attached_to(C.uint8_t(port))
-
-	if importedDevPtr == nil {
-		return nil, errors.New("failed to determine device attached to port")
-	}
-
-	var importedDev C.struct_usbip_imported_device = *importedDevPtr
-
-	// 0x06
-	if importedDev.status != C.VDEV_ST_USED {
-		return nil, errors.New("vhci_driver device not used")
-	}
-
 	// cgo can't do packed structs by itself
-	var idevPtr = unsafe.Pointer(importedDevPtr)
-	var udevPtr = unsafe.Pointer(uintptr(idevPtr) + C.sizeof_struct_usbip_imported_device - C.sizeof_struct_usbip_usb_device)
+	var udevRawPtr = C.usbip_vhci_attached_to(C.uint8_t(port))
+	if udevRawPtr == nil {
+		return nil, errors.New("failed to locate attached device")
+	}
+	var udevPtr = unsafe.Pointer(udevRawPtr)
 	var udevBytes = C.GoBytes(udevPtr, C.sizeof_struct_usbip_usb_device)
 	var goDescr = USBIPDeviceDescription{}
 	err := binary.Read(
@@ -110,22 +92,6 @@ func USBIP_VHCIDescribeAttached(port uint8) (*USBIPDeviceDescription, error) {
 		return nil, errors.Wrap(err, "failed to load usbip device")
 	}
 
-	//var goDescr = &USBIPDeviceDescription{
-	//	descr.path,
-	//	descr.busid,
-	//	descr.busnum,
-	//	descr.devnum,
-	//	descr.speed,
-	//	descr.idVendor,
-	//	descr.idProduct,
-	//	descr.bcdDevice,
-	//	descr.bDeviceClass,
-	//	descr.bDeviceSubClass,
-	//	descr.bDeviceProtocol,
-	//	descr.bConfigurationValue,
-	//	descr.bNumConfigurations,
-	//	descr.bNumInterfaces,
-	//}
 	return &goDescr, nil
 }
 

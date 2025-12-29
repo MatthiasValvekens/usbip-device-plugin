@@ -1,8 +1,7 @@
 package deviceplugin
 
 import (
-	"context"
-	"net"
+	"fmt"
 	"path/filepath"
 
 	"google.golang.org/grpc"
@@ -12,12 +11,9 @@ import (
 
 func kubeletClient(socketPath string) (*grpc.ClientConn, error) {
 	return grpc.NewClient(
-		socketPath,
+		fmt.Sprintf("unix://%s", socketPath),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
-			d := &net.Dialer{}
-			return d.DialContext(ctx, "unix", addr)
-		}),
+		grpc.WithResolvers(),
 	)
 }
 

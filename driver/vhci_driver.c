@@ -64,9 +64,11 @@ static int parse_status(const char *value)
 			BUG();
 		}
 
-		dbg("hub %s port %d status %d speed %d devid %x",
-				hub, port, status, speed, devid);
-		dbg("sockfd %u lbusid %s", sockfd, lbusid);
+		if (status != VDEV_ST_NULL) {
+            dbg("hub %s port %d status %d speed %d devid %x",
+                    hub, port, status, speed, devid);
+            dbg("sockfd %u lbusid %s", sockfd, lbusid);
+		}
 
 		/* if a device is connected, look at it */
 		idev = &vhci_driver->idev[port];
@@ -101,7 +103,7 @@ static int parse_status(const char *value)
 		c++;
 	}
 
-	dbg("exit");
+	// dbg("exit");
 
 	return 0;
 }
@@ -351,7 +353,7 @@ int usbip_vhci_detach_device(uint8_t port)
 	return 0;
 }
 
-struct usbip_imported_device* usbip_vhci_attached_to(uint8_t port)
+struct usbip_usb_device* usbip_vhci_attached_to(uint8_t port)
 {
     if (vhci_driver == NULL) {
         dbg("vhci_driver not set");
@@ -363,5 +365,16 @@ struct usbip_imported_device* usbip_vhci_attached_to(uint8_t port)
         return NULL;
     }
 
-    return  &vhci_driver->idev[port];
+    int i;
+    struct usbip_imported_device* idev;
+	for (int i = 0; i < vhci_driver->nports; i++) {
+		idev = &vhci_driver->idev[i];
+
+		if (idev->port == port && idev->status == VDEV_ST_USED) {
+            dbg("found device in status VDEV_ST_USED at port %d (index %d)", port, i);
+		    return &idev->udev;
+		}
+	}
+    dbg("failed to locate device in state VDEV_ST_USED at port %d", port);
+    return NULL;
 }

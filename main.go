@@ -147,17 +147,17 @@ func Main() error {
 	}
 
 	pluginPath := viper.GetString("plugin-directory")
+	podResourcesSocket := viper.GetString("pod-resources-socket")
 	for name, devs := range deviceSpecs {
 		ctx, cancel := context.WithCancel(context.Background())
 		fullName := path.Join(domain, name)
 		gp := deviceplugin.NewPluginForDeviceGroup(
-			devs, fullName, pluginPath,
+			devs, fullName, pluginPath, podResourcesSocket,
 			log.With(logger, "resource", fullName),
 			prometheus.WrapRegistererWith(prometheus.Labels{"resource": fullName}, r),
 		)
-		// Start the generic device plugin server.
 		g.Add(func() error {
-			_ = logger.Log("msg", fmt.Sprintf("Starting the generic-device-plugin for %q.", fullName))
+			_ = logger.Log("msg", fmt.Sprintf("Starting the usbip-device-plugin for %q.", fullName))
 			return gp.Run(ctx)
 		}, func(error) {
 			cancel()

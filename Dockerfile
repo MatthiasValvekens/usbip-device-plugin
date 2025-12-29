@@ -13,38 +13,21 @@ ARG BUILDPLATFORM
 COPY --from=tonistiigi/xx:latest / /
 RUN go env
 
-# Install needed libc and gcc for target platform.
-RUN set -ex; \
-  if [ ! -z "$TARGETPLATFORM" ]; then \
-    case "$TARGETPLATFORM" in \
-  "linux/amd64") \
-    apt update && apt install -y gcc-x86-64-linux-gnu libc6-dev-amd64-cross libudev-dev \
-    ;; \
-  "linux/arm64") \
-    apt update && apt install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross libudev-dev \
-    ;; \
-  "linux/arm/v7") \
-    apt update && apt install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross libudev-dev \
-    ;; \
-  "linux/arm/v6") \
-    apt update && apt install -y gcc-arm-linux-gnueabihf libc6-dev-armel-cross libc6-dev-armhf-cross libudev-dev \
-    ;; \
-  esac \
-  fi
+RUN xx-apt update && xx-apt install -y gcc libc6-dev libudev-dev
 
 WORKDIR /app
 
 COPY ./go.mod ./go.mod
 COPY ./go.sum ./go.sum
 
-RUN go mod download
+RUN xx-go mod download
 
 COPY ./ ./
-RUN go build -ldflags="-s -w" -o usbip-device-plugin
+RUN xx-go build -ldflags="-s -w" -o usbip-device-plugin && xx-verify usbip-device-plugin
 
 
 #Start from a new image.
-FROM debian:stable-slim
+FROM --platform=$TARGETPLATFORM debian:stable-slim
 
 
 COPY --from=plugin-builder /app/usbip-device-plugin /app/usbip-device-plugin

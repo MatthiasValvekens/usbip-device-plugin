@@ -46,15 +46,16 @@ type KnownDevice struct {
 type USBIPPlugin struct {
 	v1beta1.UnimplementedDevicePluginServer
 	resource        string
-	knownDevices    map[string]KnownDevice
-	attachedDevices map[string]usbip.AttachedDevice
+	knownDevices    map[string]*KnownDevice
+	attachedDevices map[string]*usbip.AttachedDevice
 	kubeletSocket   string
 	logger          log.Logger
 	mu              sync.Mutex
 
 	// metrics
-	deviceGauge        prometheus.Gauge
-	allocationsCounter prometheus.Counter
+	availableDeviceGauge prometheus.Gauge
+	attachedDeviceGauge  prometheus.Gauge
+	allocationsCounter   prometheus.Counter
 }
 
 func (up *USBIPPlugin) Targets() []usbip.Target {
@@ -70,12 +71,12 @@ func (up *USBIPPlugin) Targets() []usbip.Target {
 	return targets
 }
 
-func NewPluginForDeviceGroup(knownDevices []*KnownDevice, resourceName string, pluginDir string, logger log.Logger, reg prometheus.Registerer) Plugin {
+func NewPluginForDeviceGroup(knownDevices []*KnownDevice, resourceName string, pluginDir string, podResourcesSocket string, logger log.Logger, reg prometheus.Registerer) Plugin {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	devices := make(map[string]KnownDevice)
+	devices := make(map[string]*KnownDevice)
 	for _, devPtr := range knownDevices {
 		if devPtr == nil {
 			continue
@@ -87,17 +88,21 @@ func NewPluginForDeviceGroup(knownDevices []*KnownDevice, resourceName string, p
 			return nil
 		}
 		id := fmt.Sprintf("%x", sha256.Sum256(idJson))
-		devices[id] = dev
+		devices[id] = devPtr
 	}
 	p := &USBIPPlugin{
 		resource:        resourceName,
 		knownDevices:    devices,
-		attachedDevices: map[string]usbip.AttachedDevice{},
-		kubeletSocket:   kubeletSocketPath(pluginDir),
+		attachedDevices: map[string]*usbip.AttachedDevice{},
+		kubeletSocket:   podResourcesSocket,
 		logger:          logger,
-		deviceGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+		availableDeviceGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "usbip_device_plugin_available_devices",
 			Help: "The number of devices managed by this device plugin.",
+		}),
+		attachedDeviceGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "usbip_device_plugin_attached_devices",
+			Help: "The number of devices attached to this node by this device plugin.",
 		}),
 		allocationsCounter: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "usbip_device_plugin_allocations_total",
@@ -105,8 +110,18 @@ func NewPluginForDeviceGroup(knownDevices []*KnownDevice, resourceName string, p
 		}),
 	}
 
+	for {
+		_ = logger.Log("msg", fmt.Sprintf("Refreshing USB/IP devices for group %s...", resourceName))
+		if _, err := p.refreshDevices(); err == nil {
+			break
+		}
+		_ = logger.Log("msg", fmt.Sprintf("Device refresh for %s failed, sleeping for a while...", resourceName))
+		time.Sleep(10 * time.Second)
+	}
+
+	_ = logger.Log("msg", fmt.Sprintf("Preparing device plugin for %s...", resourceName))
 	if reg != nil {
-		reg.MustRegister(p.deviceGauge, p.allocationsCounter)
+		reg.MustRegister(p.availableDeviceGauge, p.allocationsCounter)
 	}
 
 	return NewPlugin(resourceName, pluginDir, p, logger, prometheus.WrapRegistererWithPrefix("generic_", reg))
@@ -149,10 +164,11 @@ func (up *USBIPPlugin) refreshTarget(target usbip.Target) (bool, error) {
 				continue
 			}
 			found = true
-			changed = changed || (kd.readProperties != cand)
-			if changed {
-				_ = up.logger.Log("msg", "found device or device changed properties", "target", kd.Target, "selector", selector, "found", cand)
+			devChanged := kd.readProperties != cand
+			if devChanged {
+				_ = up.logger.Log("msg", "found device or device changed properties", "target", kd.Target, "selector", selector, "found", cand, "previous", kd.readProperties)
 			}
+			changed = changed || devChanged
 			kd.readProperties = cand
 			break
 		}
@@ -161,6 +177,7 @@ func (up *USBIPPlugin) refreshTarget(target usbip.Target) (bool, error) {
 		kd.available = found
 		if wasAvailable && !found {
 			_ = up.logger.Log("msg", "previously available device no longer available (in use by another node?)", "target", kd.Target, "selector", selector)
+			kd.readProperties = usbip.Device{}
 		}
 	}
 
@@ -172,8 +189,7 @@ func (up *USBIPPlugin) releaseDevices() error {
 		// nothing to do
 		return nil
 	}
-
-	conn, err := kubeletClient(kubeletSocketPath(up.kubeletSocket))
+	conn, err := kubeletClient(up.kubeletSocket)
 	if err != nil {
 		return fmt.Errorf("failed to connect to kubelet: %v", err)
 	}
@@ -202,7 +218,9 @@ func (up *USBIPPlugin) releaseDevices() error {
 
 	for devId, attachedDevice := range up.attachedDevices {
 		_, inUse := witnesses[devId]
-		if !inUse {
+		if inUse {
+			_ = up.logger.Log("msg", fmt.Sprintf("device %s of resource %s still in use", devId, up.resource))
+		} else {
 			_ = up.logger.Log("msg", fmt.Sprintf("detaching device %s of resource %s", devId, up.resource))
 			err = usbip.Detach(attachedDevice.Port)
 			if err != nil {
@@ -232,8 +250,14 @@ func (up *USBIPPlugin) refreshDevices() (bool, error) {
 	up.mu.Lock()
 	defer up.mu.Unlock()
 	changed := false
+	// FIXME detect attached devices across restarts
 	err := up.releaseDevices()
+	if err != nil {
+		_ = up.logger.Log("msg", fmt.Sprintf("failed to release device %s of resource %s", up.resource, up.resource), "err", err)
+	}
 	// even if the release fails, go on
+	// FIXME decouple this per-target refresh from the plugin registration in kubelet
+	//  so we only have to hit each target once
 	for _, target := range up.Targets() {
 		var targetUnchanged bool
 		targetUnchanged, err = up.refreshTarget(target)
@@ -253,9 +277,10 @@ func (up *USBIPPlugin) refreshDevices() (bool, error) {
 		}
 	}
 
-	up.deviceGauge.Set(float64(availableCount))
+	up.availableDeviceGauge.Set(float64(availableCount))
+	up.attachedDeviceGauge.Set(float64(len(up.attachedDevices)))
 
-	return true, err
+	return !changed, err
 }
 
 // GetDeviceState always returns healthy.
@@ -290,7 +315,9 @@ func (up *USBIPPlugin) Allocate(_ context.Context, req *v1beta1.AllocateRequest)
 				if err != nil {
 					return nil, err
 				}
-				attachedDevice = *attachedDeviceRef
+				attachedDevice = attachedDeviceRef
+				up.attachedDevices[id] = attachedDeviceRef
+				_ = up.logger.Log("msg", "Attached device", "details", attachedDevice)
 			}
 			resp.Devices = append(
 				resp.Devices,

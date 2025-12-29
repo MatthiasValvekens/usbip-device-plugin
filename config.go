@@ -32,6 +32,7 @@ func initConfig() error {
 	cfgFile := flag.String("config", "", "Path to the config file.")
 	flag.String("domain", defaultDomain, "The domain to use when when declaring devices.")
 	flag.String("plugin-directory", v1beta1.DevicePluginPath, "The directory in which to create plugin sockets.")
+	flag.String("pod-resources-socket", "/var/lib/kubelet/pod-resources/kubelet.sock", "The path to the kubelet pod-resources socket")
 	flag.String("log-level", logLevelInfo, fmt.Sprintf("Log level to use. Possible values: %s", availableLogLevels))
 	flag.String("listen", ":8080", "The address at which to listen for health and metrics.")
 
@@ -60,8 +61,6 @@ func initConfig() error {
 			return fmt.Errorf("failed to read config file: %w", err)
 		}
 	}
-
-	viper.RegisterAlias("devices", "device")
 
 	return nil
 }
