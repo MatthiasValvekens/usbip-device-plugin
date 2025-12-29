@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (C) 2005-2007 Takahiro Hirofuchi
+ *           (C) 2025      Matthias Valvekens
  */
 
 #ifndef __VHCI_DRIVER_H

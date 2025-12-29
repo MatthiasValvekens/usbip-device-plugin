@@ -1,5 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 package deviceplugin
 
+// This project is GPL-2.0, but this file contains code from generic-device-plugin.
+// Original license notice below.
+//
 // Copyright 2020 the generic-device-plugin authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +31,7 @@ import (
 	"github.com/MatthiasValvekens/usbip-device-plugin/usbip"
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/run"
 	"k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 	v1 "k8s.io/kubelet/pkg/apis/podresources/v1"
@@ -112,6 +118,7 @@ func (dm *DeviceManager) AddRefreshJob(group *run.Group) {
 			for {
 				select {
 				case <-time.After(deviceCheckInterval):
+					_ = level.Debug(dm.logger).Log("msg", "scheduled device refresh...")
 					changedDevices, err := dm.refreshDevices()
 					if err != nil {
 						_ = dm.logger.Log("msg", "error refreshing devices", "err", err)
@@ -286,8 +293,10 @@ func (dm *DeviceManager) releaseDevices() error {
 	toRemove := make([]string, 0, len(witnesses))
 
 	for devId, attachedDevice := range dm.attachedDevices {
-		_, inUse := witnesses[devId]
-		if !inUse {
+		podRef, inUse := witnesses[devId]
+		if inUse {
+			_ = level.Debug(dm.logger).Log("msg", "device still in use", "devId", devId, "podRef", podRef)
+		} else {
 			_ = dm.logger.Log("msg", fmt.Sprintf("detaching device %s used", devId))
 			err = usbip.Detach(attachedDevice.Port)
 			if err != nil {
