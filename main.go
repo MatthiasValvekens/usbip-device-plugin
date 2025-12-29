@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"github.com/MatthiasValvekens/usbip-device-plugin/deviceplugin"
+	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/run"
@@ -146,19 +147,34 @@ func Main() error {
 		})
 	}
 
+	idsByResource := make(map[string][]string, len(deviceSpecs))
 	pluginPath := viper.GetString("plugin-directory")
 	podResourcesSocket := viper.GetString("pod-resources-socket")
+	dm := deviceplugin.NewDeviceManager(podResourcesSocket, logger)
 	for name, devs := range deviceSpecs {
+		registeredIds, err := dm.Register(name, devs)
+		if err != nil {
+			return errors.Wrapf(err, "failed to register devices for %s", name)
+		}
+		idsByResource[name] = registeredIds
+	}
+	err = dm.Start()
+	if err != nil {
+		return errors.Wrapf(err, "error starting device manager")
+	}
+	dm.AddRefreshJob(&g)
+
+	for name, devIds := range idsByResource {
 		ctx, cancel := context.WithCancel(context.Background())
 		fullName := path.Join(domain, name)
-		gp := deviceplugin.NewPluginForDeviceGroup(
-			devs, fullName, pluginPath, podResourcesSocket,
+		p := deviceplugin.NewPluginForDeviceGroup(
+			devIds, dm, fullName, pluginPath,
 			log.With(logger, "resource", fullName),
 			prometheus.WrapRegistererWith(prometheus.Labels{"resource": fullName}, r),
 		)
 		g.Add(func() error {
-			_ = logger.Log("msg", fmt.Sprintf("Starting the usbip-device-plugin for %q.", fullName))
-			return gp.Run(ctx)
+			_ = logger.Log("msg", fmt.Sprintf("Starting the usbip-device-plugin for %s.", fullName))
+			return p.Run(ctx)
 		}, func(error) {
 			cancel()
 		})
