@@ -28,9 +28,9 @@ type Device struct {
 
 type AttachedDevice struct {
 	Device
-	Target       Target  `json:"target"`
-	Port         VHCPort `json:"vhc_port"`
-	DevMountPath string  `json:"dev_mount_path"`
+	Target       Target      `json:"target"`
+	Port         VirtualPort `json:"vhc_port"`
+	DevMountPath string      `json:"dev_mount_path"`
 }
 
 type usbipHeader struct {
@@ -46,4 +46,4 @@ type usbipInterfaceDescription struct {
 	_                 uint8
 }
 
-type VHCPort uint8
+type VirtualPort uint8

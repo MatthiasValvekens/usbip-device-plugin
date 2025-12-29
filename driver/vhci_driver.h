@@ -59,5 +59,6 @@ int usbip_vhci_attach_device2(uint8_t port, int sockfd, uint32_t devid,
 int usbip_vhci_detach_device(uint8_t port);
 
 struct usbip_usb_device* usbip_vhci_attached_to(uint8_t port);
+struct usbip_imported_device* usbip_vhci_imported_devices();
 
 #endif /* __VHCI_DRIVER_H */

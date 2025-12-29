@@ -378,3 +378,11 @@ struct usbip_usb_device* usbip_vhci_attached_to(uint8_t port)
     dbg("failed to locate device in state VDEV_ST_USED at port %d", port);
     return NULL;
 }
+
+struct usbip_imported_device* usbip_vhci_imported_devices() {
+    if (vhci_driver == NULL) {
+        dbg("vhci_driver not set");
+        return NULL;
+    }
+    return &vhci_driver->idev[0];
+}

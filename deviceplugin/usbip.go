@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MatthiasValvekens/usbip-device-plugin/driver"
 	"github.com/MatthiasValvekens/usbip-device-plugin/usbip"
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
@@ -41,6 +42,13 @@ type KnownDevice struct {
 	ExtraDevices   []v1beta1.DeviceSpec `json:"extras"`
 	readProperties usbip.Device
 	available      bool
+}
+
+func (kd *KnownDevice) SelectorMatches(cand usbip.Device) bool {
+	selector := kd.Selector
+	return (selector.BusId == "" || cand.BusId == "" || selector.BusId == cand.BusId) &&
+		(selector.Vendor == 0 || selector.Vendor == cand.Vendor) &&
+		(selector.Product == 0 || selector.Product == cand.Product)
 }
 
 type USBIPPlugin struct {
@@ -111,20 +119,25 @@ func NewPluginForDeviceGroup(knownDevices []*KnownDevice, resourceName string, p
 	}
 
 	for {
-		_ = logger.Log("msg", fmt.Sprintf("Refreshing USB/IP devices for group %s...", resourceName))
+		_ = logger.Log("msg", "Refreshing USB/IP devices...")
 		if _, err := p.refreshDevices(); err == nil {
 			break
 		}
-		_ = logger.Log("msg", fmt.Sprintf("Device refresh for %s failed, sleeping for a while...", resourceName))
+		_ = logger.Log("msg", "Device refresh failed, sleeping for a while...")
 		time.Sleep(10 * time.Second)
 	}
 
-	_ = logger.Log("msg", fmt.Sprintf("Preparing device plugin for %s...", resourceName))
-	if reg != nil {
-		reg.MustRegister(p.availableDeviceGauge, p.allocationsCounter)
+	_ = logger.Log("msg", "Enumerating attached devices...")
+	if err := p.enumerateAttachedDevices(); err != nil {
+		_ = logger.Log("msg", "Failed to enumerate attached devices. Assuming none.", "err", err)
 	}
 
-	return NewPlugin(resourceName, pluginDir, p, logger, prometheus.WrapRegistererWithPrefix("generic_", reg))
+	_ = logger.Log("msg", "Preparing device plugin...")
+	if reg != nil {
+		reg.MustRegister(p.availableDeviceGauge, p.allocationsCounter, p.attachedDeviceGauge)
+	}
+
+	return NewPlugin(resourceName, pluginDir, p, logger, prometheus.WrapRegistererWithPrefix("usbip_", reg))
 }
 
 func (up *USBIPPlugin) refreshTarget(target usbip.Target) (bool, error) {
@@ -154,13 +167,7 @@ func (up *USBIPPlugin) refreshTarget(target usbip.Target) (bool, error) {
 		selector := kd.Selector
 		found := false
 		for _, cand := range lst {
-			if selector.BusId != "" && selector.BusId != cand.BusId {
-				continue
-			}
-			if selector.Vendor != 0 && selector.Vendor != cand.Vendor {
-				continue
-			}
-			if selector.Product != 0 && selector.Product != cand.Product {
+			if !kd.SelectorMatches(cand) {
 				continue
 			}
 			found = true
@@ -182,6 +189,58 @@ func (up *USBIPPlugin) refreshTarget(target usbip.Target) (bool, error) {
 	}
 
 	return !changed, err
+}
+
+func (up *USBIPPlugin) enumerateAttachedDevices() error {
+	err := driver.DriverOpen()
+	if err != nil {
+		return err
+	}
+	defer driver.DriverClose()
+
+	attached, err := driver.DescribeAllAttached()
+	if err != nil {
+		return err
+	}
+
+	for _, attachedDev := range attached {
+		_ = up.logger.Log("msg", "attempting to pair attached USB/IP device with known device...", "port", attachedDev.Port, "device", *attachedDev)
+		dev := usbip.Device{
+			Vendor:  usbip.USBID(attachedDev.Description.Vendor),
+			Product: usbip.USBID(attachedDev.Description.Product),
+			// we intentionally do _not_ set BusId since the bus ID on the remote is not part of the data
+			// available to us
+			// (TODO: try to figure out if it's somewhere else in sysfs)
+			BusId: "",
+		}
+		found := false
+		for devId, kd := range up.knownDevices {
+			if !kd.SelectorMatches(dev) {
+				continue
+			}
+			_ = up.logger.Log("msg", "attached device matched with known device", "port", attachedDev.Port, "matched", devId)
+			var mountPath string
+			mountPath, err = usbip.FindDevMountPath(attachedDev.Description)
+			if err != nil {
+				// TODO this log can be confusing since this routine is invoked separately for each resource
+				//  -> all the more reason to try to refactor things so we can manage all the resources in one structure
+				_ = up.logger.Log("msg", "failed to find path to device", "port", attachedDev.Port, "matched", devId, "err", err)
+				break
+			}
+			found = true
+			up.attachedDevices[devId] = &usbip.AttachedDevice{
+				Device:       dev,
+				Target:       kd.Target,
+				Port:         usbip.VirtualPort(attachedDev.Port),
+				DevMountPath: mountPath,
+			}
+			break
+		}
+		if !found {
+			_ = up.logger.Log("msg", "failed to pair device with config; ignoring...", "port", attachedDev.Port)
+		}
+	}
+	return nil
 }
 
 func (up *USBIPPlugin) releaseDevices() error {
@@ -245,8 +304,8 @@ func (up *USBIPPlugin) releaseDevices() error {
 }
 
 // refreshDevices updates the devices available to the
-// generic device plugin and returns a boolean indicating
-// if everything is OK, i.e. if the devices are the same ones as before.
+// USB/IP device plugin and returns a boolean indicating
+// if the state is the same as before.
 func (up *USBIPPlugin) refreshDevices() (bool, error) {
 	up.mu.Lock()
 	defer up.mu.Unlock()

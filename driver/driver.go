@@ -30,7 +30,14 @@ type USBIPDeviceDescription struct {
 	NumInterfaces            uint8
 }
 
-func USBIP_VHCIDriverOpen() error {
+type USBIPAttachedDevice struct {
+	Description  *USBIPDeviceDescription
+	RemoteBusNum uint32
+	RemoteDevNum uint32
+	Port         uint8
+}
+
+func DriverOpen() error {
 	if C.usbip_vhci_driver_open() != 0 {
 		return errors.New("usbip_vhci_driver_open failed")
 	}
@@ -38,11 +45,11 @@ func USBIP_VHCIDriverOpen() error {
 	return nil
 }
 
-func USBIP_VHCIDriverClose() {
+func DriverClose() {
 	C.usbip_vhci_driver_close()
 }
 
-func USBIP_VHCIGetFreePort(speed uint32) (uint8, error) {
+func GetFreePort(speed uint32) (uint8, error) {
 	port := C.usbip_vhci_get_free_port(C.uint32_t(speed))
 	if port == -1 {
 		return 255, errors.New("usbip_vhci_get_free_port failed")
@@ -50,7 +57,7 @@ func USBIP_VHCIGetFreePort(speed uint32) (uint8, error) {
 	return uint8(port), nil
 }
 
-func USBIP_VHCIAttachDevice(port uint8, conn *net.TCPConn, devid uint32, speed uint32) error {
+func AttachDevice(port uint8, conn *net.TCPConn, devid uint32, speed uint32) error {
 	rawConn, err := conn.SyscallConn()
 	if err != nil {
 		return errors.Wrap(err, "failed to access raw connection")
@@ -74,12 +81,12 @@ func USBIP_VHCIAttachDevice(port uint8, conn *net.TCPConn, devid uint32, speed u
 	return nil
 }
 
-func USBIP_VHCIDescribeAttached(port uint8) (*USBIPDeviceDescription, error) {
-	// cgo can't do packed structs by itself
+func DescribeAttached(port uint8) (*USBIPDeviceDescription, error) {
 	var udevRawPtr = C.usbip_vhci_attached_to(C.uint8_t(port))
 	if udevRawPtr == nil {
 		return nil, errors.New("failed to locate attached device")
 	}
+	// cgo can't do packed structs by itself
 	var udevPtr = unsafe.Pointer(udevRawPtr)
 	var udevBytes = C.GoBytes(udevPtr, C.sizeof_struct_usbip_usb_device)
 	var goDescr = USBIPDeviceDescription{}
@@ -95,7 +102,48 @@ func USBIP_VHCIDescribeAttached(port uint8) (*USBIPDeviceDescription, error) {
 	return &goDescr, nil
 }
 
-func USBIP_VHCIDetachDevice(port uint8) error {
+func DescribeAllAttached() ([]*USBIPAttachedDevice, error) {
+	// first enumerate occupied ports, then call DescribeAttached.
+	// This isn't the most efficient way, but it avoids pushing more complexity
+	// to the C layer while evading the difficulties of working with CGO and
+	// packed structs. Since this routine is only needed on startup, that's good enough.
+
+	vhciDriver := C.vhci_driver
+
+	devices := make([]*USBIPAttachedDevice, 0)
+
+	// cgo can't deal with flexible trailing arrays in structs, so we have to do some voodoo
+	// to copy the data into a Go array.
+	var rawIdevsPtr = C.usbip_vhci_imported_devices()
+	if rawIdevsPtr == nil {
+		return nil, errors.New("vhci_driver not loaded")
+	}
+	// ports are addressed with uint8_t, so this is good enough
+	var idevs = (*[256]C.struct_usbip_imported_device)(unsafe.Pointer(rawIdevsPtr))
+
+	for i := 0; i < int(vhciDriver.nports); i++ {
+		idev := idevs[i]
+
+		if idev.status == C.VDEV_ST_NOTASSIGNED || idev.status == C.VDEV_ST_USED {
+			devices = append(devices, &USBIPAttachedDevice{
+				RemoteBusNum: uint32(idev.busnum),
+				RemoteDevNum: uint32(idev.devnum),
+				Port:         uint8(idev.port),
+			})
+		}
+	}
+
+	for _, dev := range devices {
+		description, err := DescribeAttached(dev.Port)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Error while retrieving details for device on port %d", dev.Port)
+		}
+		dev.Description = description
+	}
+	return devices, nil
+}
+
+func DetachDevice(port uint8) error {
 	retval := C.usbip_vhci_detach_device(C.uint8_t(port))
 	if retval != 0 {
 		return errors.New("usbip_vhci_detach_device failed")

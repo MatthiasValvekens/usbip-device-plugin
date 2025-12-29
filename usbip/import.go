@@ -86,7 +86,7 @@ func (t Target) Import(busId string) (*AttachedDevice, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to describe attached device")
 	}
-	devName, err := findDevMountPath(description)
+	devName, err := FindDevMountPath(description)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to find device mount path")
 	}
@@ -104,7 +104,7 @@ func (t Target) Import(busId string) (*AttachedDevice, error) {
 	return attachedDev, nil
 }
 
-func findDevMountPath(description *driver.USBIPDeviceDescription) (string, error) {
+func FindDevMountPath(description *driver.USBIPDeviceDescription) (string, error) {
 	parent := string(description.Path[:bytes.IndexByte(description.Path[:], 0)])
 	ueventPath := path.Join(parent, "uevent")
 
@@ -138,37 +138,37 @@ func findDevMountPath(description *driver.USBIPDeviceDescription) (string, error
 
 }
 
-func (c *Connection) attachImported(resp usbipImportResponse) (VHCPort, error) {
-	err := driver.USBIP_VHCIDriverOpen()
+func (c *Connection) attachImported(resp usbipImportResponse) (VirtualPort, error) {
+	err := driver.DriverOpen()
 	if err != nil {
-		return VHCPort(0), err
+		return VirtualPort(0), err
 	}
-	defer driver.USBIP_VHCIDriverClose()
+	defer driver.DriverClose()
 
-	port, err := driver.USBIP_VHCIGetFreePort(resp.Speed)
+	port, err := driver.GetFreePort(resp.Speed)
 	if err != nil {
-		return VHCPort(0), err
+		return VirtualPort(0), err
 	}
 
-	err = driver.USBIP_VHCIAttachDevice(
+	err = driver.AttachDevice(
 		port,
 		c.connection.(*net.TCPConn),
 		resp.BusNum<<16|resp.DevNum,
 		resp.Speed,
 	)
 
-	return VHCPort(port), err
+	return VirtualPort(port), err
 }
 
-func (c *Connection) describeAttached(port VHCPort) (*driver.USBIPDeviceDescription, error) {
-	err := driver.USBIP_VHCIDriverOpen()
+func (c *Connection) describeAttached(port VirtualPort) (*driver.USBIPDeviceDescription, error) {
+	err := driver.DriverOpen()
 	if err != nil {
 		return nil, err
 	}
-	defer driver.USBIP_VHCIDriverClose()
+	defer driver.DriverClose()
 
 	var description *driver.USBIPDeviceDescription
-	description, err = driver.USBIP_VHCIDescribeAttached(uint8(port))
+	description, err = driver.DescribeAttached(uint8(port))
 
 	if err != nil {
 		return nil, err
