@@ -200,7 +200,7 @@ func (up *USBIPPlugin) releaseDevices() error {
 	if err != nil {
 		return fmt.Errorf("failed to interrogate kubelet about resource usage: %v", err)
 	}
-	witnesses := make(map[string]bool, len(up.attachedDevices))
+	witnesses := make(map[string]string, len(up.attachedDevices))
 	for _, podResources := range usage.GetPodResources() {
 		for _, containerResources := range podResources.GetContainers() {
 			for _, containerDevices := range containerResources.GetDevices() {
@@ -208,7 +208,9 @@ func (up *USBIPPlugin) releaseDevices() error {
 					continue
 				}
 				for _, devId := range containerDevices.DeviceIds {
-					witnesses[devId] = true
+					// record the pod of which the container that holds the device is part
+					// so we can log it later if it's one of ours
+					witnesses[devId] = fmt.Sprintf("%s/%s", podResources.Namespace, podResources.Name)
 				}
 			}
 		}
@@ -217,15 +219,14 @@ func (up *USBIPPlugin) releaseDevices() error {
 	toRemove := make([]string, 0, len(witnesses))
 
 	for devId, attachedDevice := range up.attachedDevices {
-		_, inUse := witnesses[devId]
+		podRef, inUse := witnesses[devId]
 		if inUse {
-			_ = up.logger.Log("msg", fmt.Sprintf("device %s of resource %s still in use", devId, up.resource))
+			_ = up.logger.Log("msg", fmt.Sprintf("device %s still in use by %s", devId, podRef))
 		} else {
-			_ = up.logger.Log("msg", fmt.Sprintf("detaching device %s of resource %s", devId, up.resource))
+			_ = up.logger.Log("msg", fmt.Sprintf("detaching device %s used by %s", devId, podRef))
 			err = usbip.Detach(attachedDevice.Port)
 			if err != nil {
-				// TODO log error properly
-				_ = up.logger.Log("msg", fmt.Sprintf("failed to detach %s of resource %s", devId, up.resource))
+				_ = up.logger.Log("msg", fmt.Sprintf("failed to detach %s used by %s", devId, podRef), "err", err)
 				continue
 			}
 			toRemove = append(toRemove, devId)
@@ -237,7 +238,7 @@ func (up *USBIPPlugin) releaseDevices() error {
 	}
 
 	if err != nil {
-		return errors.Wrapf(err, "There were errors detaching some devices of resource %s", up.resource)
+		return errors.Wrap(err, "There were errors detaching some devices")
 	}
 
 	return nil
