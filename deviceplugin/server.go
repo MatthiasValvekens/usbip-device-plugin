@@ -35,6 +35,7 @@ type USBIPPlugin struct {
 	selectableDevices map[string]*KnownDevice
 	manager           *DeviceManager
 	logger            log.Logger
+	refreshChan       chan []string
 
 	// metrics
 	availableDeviceGauge prometheus.Gauge
@@ -62,6 +63,7 @@ func NewPluginForDeviceGroup(deviceIds []string, dm *DeviceManager, resourceName
 		selectableDevices: selectableDevices,
 		manager:           dm,
 		logger:            logger,
+		refreshChan:       make(chan []string),
 		availableDeviceGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "usbip_device_plugin_available_devices",
 			Help: "The number of devices managed by this device plugin.",
@@ -75,6 +77,7 @@ func NewPluginForDeviceGroup(deviceIds []string, dm *DeviceManager, resourceName
 			Help: "The total number of device allocations made by this device plugin.",
 		}),
 	}
+	dm.subscribers = append(dm.subscribers, p.refreshChan)
 
 	_ = logger.Log("msg", "Preparing device plugin...")
 	if reg != nil {
@@ -179,7 +182,7 @@ func (up *USBIPPlugin) ListAndWatch(_ *v1beta1.Empty, stream v1beta1.DevicePlugi
 				return err
 			}
 		}
-		changedDevices = <-up.manager.refreshChan
+		changedDevices = <-up.refreshChan
 		changeRelevant = false
 		for _, devId := range changedDevices {
 			_, ok := up.selectableDevices[devId]

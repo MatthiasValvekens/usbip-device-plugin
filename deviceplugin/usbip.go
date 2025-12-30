@@ -62,7 +62,7 @@ type DeviceManager struct {
 	podResourcesSocket string
 	logger             log.Logger
 	mu                 sync.Mutex
-	refreshChan        chan []string
+	subscribers        []chan []string
 }
 
 func NewDeviceManager(podResourcesSocket string, logger log.Logger) *DeviceManager {
@@ -74,7 +74,7 @@ func NewDeviceManager(podResourcesSocket string, logger log.Logger) *DeviceManag
 		attachedDevices:    make(map[string]*usbip.AttachedDevice),
 		podResourcesSocket: podResourcesSocket,
 		logger:             logger,
-		refreshChan:        make(chan []string),
+		subscribers:        make([]chan []string, 0),
 	}
 }
 
@@ -124,15 +124,20 @@ func (dm *DeviceManager) AddRefreshJob(group *run.Group) {
 						_ = dm.logger.Log("msg", "error refreshing devices", "err", err)
 						return err
 					}
-					dm.refreshChan <- changedDevices
+					for _, sub := range dm.subscribers {
+						// we assume this doesn't block _too_ much
+						sub <- changedDevices
+					}
 				case <-cancel:
 					return nil
 				}
 			}
 		},
 		func(error) {
-			close(dm.refreshChan)
 			close(cancel)
+			for _, sub := range dm.subscribers {
+				close(sub)
+			}
 		},
 	)
 }
@@ -338,14 +343,6 @@ func (dm *DeviceManager) refreshDevices() ([]string, error) {
 			_ = dm.logger.Log("warn", fmt.Sprintf("skipping target %s:%d, failed to connect", target.Host, target.Port))
 		} else {
 			changed = append(changed, changedForTarget...)
-		}
-	}
-
-	availableCount := 0
-
-	for _, dev := range dm.knownDevices {
-		if dev.available {
-			availableCount += 1
 		}
 	}
 
