@@ -2,11 +2,11 @@ package usbip
 
 import "github.com/MatthiasValvekens/usbip-device-plugin/driver"
 
-func Detach(port VirtualPort) error {
-	err := driver.DriverOpen()
+func Detach(port driver.VirtualPort) error {
+	vhci, err := driver.NewVHCIDriver()
 	if err != nil {
 		return err
 	}
-	defer driver.DriverClose()
-	return driver.DetachDevice(uint8(port))
+	defer vhci.Close()
+	return vhci.DetachDevice(port)
 }

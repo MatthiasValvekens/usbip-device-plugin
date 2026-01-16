@@ -2,6 +2,8 @@ package usbip
 
 import (
 	"net"
+
+	"github.com/MatthiasValvekens/usbip-device-plugin/driver"
 )
 
 // USBID is a representation of a platform or vendor ID under the USB standard (see gousb.ID)
@@ -28,9 +30,9 @@ type Device struct {
 
 type AttachedDevice struct {
 	Device
-	Target       Target      `json:"target"`
-	Port         VirtualPort `json:"vhc_port"`
-	DevMountPath string      `json:"dev_mount_path"`
+	Target       Target             `json:"target"`
+	Port         driver.VirtualPort `json:"vhc_port"`
+	DevMountPath string             `json:"dev_mount_path"`
 }
 
 type usbipHeader struct {
@@ -38,12 +40,3 @@ type usbipHeader struct {
 	Code    uint16
 	Status  uint32
 }
-
-type usbipInterfaceDescription struct {
-	InterfaceClass    uint8
-	InterfaceSubClass uint8
-	InterfaceProtocol uint8
-	_                 uint8
-}
-
-type VirtualPort uint8

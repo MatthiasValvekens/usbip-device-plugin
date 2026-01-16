@@ -215,19 +215,14 @@ func (dm *DeviceManager) refreshTarget(target usbip.Target) ([]string, error) {
 }
 
 func (dm *DeviceManager) enumerateAttachedDevices() error {
-	err := driver.DriverOpen()
+	vhci, err := driver.NewVHCIDriver()
 	if err != nil {
 		return err
 	}
-	defer driver.DriverClose()
+	defer vhci.Close()
 
-	attached, err := driver.DescribeAllAttached()
-	if err != nil {
-		return err
-	}
-
-	for _, attachedDev := range attached {
-		_ = dm.logger.Log("msg", "attempting to pair attached USB/IP device with known device...", "port", attachedDev.Port, "device", *attachedDev)
+	for _, attachedDev := range vhci.AttachedDevices {
+		_ = dm.logger.Log("msg", "attempting to pair attached USB/IP device with known device...", "port", attachedDev.Port, "device", attachedDev)
 		dev := usbip.Device{
 			Vendor:  usbip.USBID(attachedDev.Description.Vendor),
 			Product: usbip.USBID(attachedDev.Description.Product),
@@ -254,7 +249,7 @@ func (dm *DeviceManager) enumerateAttachedDevices() error {
 			dm.attachedDevices[devId] = &usbip.AttachedDevice{
 				Device:       dev,
 				Target:       kd.Target,
-				Port:         usbip.VirtualPort(attachedDev.Port),
+				Port:         attachedDev.Port,
 				DevMountPath: mountPath,
 			}
 			break

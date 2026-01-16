@@ -138,41 +138,37 @@ func FindDevMountPath(description *driver.USBIPDeviceDescription) (string, error
 
 }
 
-func (c *Connection) attachImported(resp usbipImportResponse) (VirtualPort, error) {
-	err := driver.DriverOpen()
+func (c *Connection) attachImported(resp usbipImportResponse) (driver.VirtualPort, error) {
+	vhci, err := driver.NewVHCIDriver()
 	if err != nil {
-		return VirtualPort(0), err
+		return driver.VirtualPort(0), err
 	}
-	defer driver.DriverClose()
+	defer vhci.Close()
 
-	port, err := driver.GetFreePort(resp.Speed)
-	if err != nil {
-		return VirtualPort(0), err
-	}
-
-	err = driver.AttachDevice(
-		port,
+	port, err := vhci.AttachDevice(
 		c.connection.(*net.TCPConn),
 		resp.BusNum<<16|resp.DevNum,
 		resp.Speed,
 	)
+	if err != nil {
+		return driver.VirtualPort(0), err
+	}
 
-	return VirtualPort(port), err
+	return port, err
 }
 
-func (c *Connection) describeAttached(port VirtualPort) (*driver.USBIPDeviceDescription, error) {
-	err := driver.DriverOpen()
+func (c *Connection) describeAttached(port driver.VirtualPort) (*driver.USBIPDeviceDescription, error) {
+	vhci, err := driver.NewVHCIDriver()
 	if err != nil {
 		return nil, err
 	}
-	defer driver.DriverClose()
+	defer vhci.Close()
 
 	var description *driver.USBIPDeviceDescription
-	description, err = driver.DescribeAttached(uint8(port))
-
-	if err != nil {
-		return nil, err
+	if int(port) > len(vhci.AttachedDevices) {
+		return nil, errors.Newf("port number %d out of bounds", port)
 	}
+	description = vhci.AttachedDevices[port].Description
 
 	return description, nil
 }

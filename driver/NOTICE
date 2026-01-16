@@ -1,5 +1,0 @@
-The C source code is a modified version of the VHCI driver interface
-library that is part of the Linux kernel tree. They are included
-here under the terms of the GPL 2.0 license.
-
-https://github.com/torvalds/linux/tree/master/tools/usb/usbip/libsrc
