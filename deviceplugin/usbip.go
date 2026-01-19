@@ -57,6 +57,7 @@ func (kd *KnownDevice) SelectorMatches(cand usbip.Device) bool {
 }
 
 type DeviceManager struct {
+	vhciDriver         driver.VHCIDriver
 	knownDevices       map[string]*KnownDevice
 	attachedDevices    map[string]*usbip.AttachedDevice
 	podResourcesSocket string
@@ -65,7 +66,7 @@ type DeviceManager struct {
 	subscribers        []chan []string
 }
 
-func NewDeviceManager(podResourcesSocket string, logger log.Logger) *DeviceManager {
+func NewDeviceManager(podResourcesSocket string, logger log.Logger, vhci driver.VHCIDriver) *DeviceManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -75,6 +76,7 @@ func NewDeviceManager(podResourcesSocket string, logger log.Logger) *DeviceManag
 		podResourcesSocket: podResourcesSocket,
 		logger:             logger,
 		subscribers:        make([]chan []string, 0),
+		vhciDriver:         vhci,
 	}
 }
 
@@ -215,13 +217,9 @@ func (dm *DeviceManager) refreshTarget(target usbip.Target) ([]string, error) {
 }
 
 func (dm *DeviceManager) enumerateAttachedDevices() error {
-	vhci, err := driver.NewVHCIDriver()
-	if err != nil {
-		return err
-	}
-	defer vhci.Close()
+	vhci := dm.vhciDriver
 
-	for _, attachedDev := range vhci.AttachedDevices {
+	for _, attachedDev := range vhci.GetDeviceSlots() {
 		_ = dm.logger.Log("msg", "attempting to pair attached USB/IP device with known device...", "port", attachedDev.Port, "device", attachedDev)
 		dev := usbip.Device{
 			Vendor:  usbip.USBID(attachedDev.Description.Vendor),
@@ -240,7 +238,7 @@ func (dm *DeviceManager) enumerateAttachedDevices() error {
 			}
 			_ = dm.logger.Log("msg", "attached device matched with known device", "port", attachedDev.Port, "matched", devId)
 			var mountPath string
-			mountPath, err = usbip.FindDevMountPath(attachedDev.Description)
+			mountPath, err := usbip.FindDevMountPath(attachedDev.Description)
 			if err != nil {
 				_ = dm.logger.Log("msg", "failed to find path to device", "port", attachedDev.Port, "matched", devId, "err", err)
 				break
@@ -298,7 +296,7 @@ func (dm *DeviceManager) releaseDevices() error {
 			_ = level.Debug(dm.logger).Log("msg", "device still in use", "devId", devId, "podRef", podRef)
 		} else {
 			_ = dm.logger.Log("msg", fmt.Sprintf("detaching device %s used", devId))
-			err = usbip.Detach(attachedDevice.Port)
+			err = usbip.Detach(attachedDevice.Port, dm.vhciDriver)
 			if err != nil {
 				_ = dm.logger.Log("msg", fmt.Sprintf("failed to detach %s", devId), "err", err)
 				continue

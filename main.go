@@ -31,6 +31,7 @@ import (
 	"syscall"
 
 	"github.com/MatthiasValvekens/usbip-device-plugin/deviceplugin"
+	"github.com/MatthiasValvekens/usbip-device-plugin/driver"
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -155,7 +156,12 @@ func Main() error {
 	idsByResource := make(map[string][]string, len(deviceSpecs))
 	pluginPath := viper.GetString("plugin-directory")
 	podResourcesSocket := viper.GetString("pod-resources-socket")
-	dm := deviceplugin.NewDeviceManager(podResourcesSocket, logger)
+	vhci, err := driver.NewVHCIDriver()
+	if err != nil {
+		return errors.Wrap(err, "failed to set up VHCI driver")
+	}
+	defer vhci.Close()
+	dm := deviceplugin.NewDeviceManager(podResourcesSocket, logger, vhci)
 	for name, devs := range deviceSpecs {
 		registeredIds, err := dm.Register(name, devs)
 		if err != nil {

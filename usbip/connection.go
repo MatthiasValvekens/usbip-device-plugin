@@ -20,11 +20,14 @@ func (t Target) Dial() (usbipConn *Connection, err error) {
 
 	usbipConn = &Connection{
 		Target:     t,
-		connection: conn,
+		connection: conn.(*net.TCPConn),
 	}
 	return usbipConn, nil
 }
 
 func (c *Connection) Close() {
-	_ = c.connection.Close()
+	if c.connection != nil {
+		_ = c.connection.Close()
+		c.connection = nil
+	}
 }

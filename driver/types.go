@@ -1,5 +1,7 @@
 package driver
 
+import "net"
+
 type USBDeviceSpeed uint32
 
 const (
@@ -65,10 +67,10 @@ type USBIPAttachedDevice struct {
 	Description *USBIPDeviceDescription
 }
 
-type VHCIDriver struct {
-	hostController *UdevDevice
-
-	AvailableControllers uint
-
-	AttachedDevices []USBIPAttachedDevice
+type VHCIDriver interface {
+	AttachDevice(conn *net.TCPConn, deviceId uint32, speed USBDeviceSpeed) (VirtualPort, error)
+	DetachDevice(port VirtualPort) error
+	UpdateAttachedDevices() error
+	Close()
+	GetDeviceSlots() []USBIPAttachedDevice
 }

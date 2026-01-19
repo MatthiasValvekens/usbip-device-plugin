@@ -16,7 +16,7 @@ type Target struct {
 
 type Connection struct {
 	Target     Target
-	connection net.Conn
+	connection *net.TCPConn
 }
 
 type Device struct {

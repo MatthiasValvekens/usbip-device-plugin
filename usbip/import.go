@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
-	"net"
 	"os"
 	"path"
 	"strings"
@@ -30,19 +29,14 @@ type usbipImportResponse struct {
 	driver.USBIPDeviceDescription
 }
 
-func (t Target) Import(busId string) (*AttachedDevice, error) {
-	c, err := t.Dial()
-	if err != nil {
-		return nil, err
-	}
-	var conn = c.connection
+func (c *Connection) requestImport(busId string) (*usbipImportResponse, error) {
 	var now = time.Now()
 	var busIdBin [32]byte
 	copy(busIdBin[:], busId)
 
-	defer c.Close()
+	conn := c.connection
 
-	err = conn.SetReadDeadline(now.Add(5 * time.Second))
+	err := conn.SetReadDeadline(now.Add(5 * time.Second))
 	if err != nil {
 		return nil, err
 	}
@@ -72,13 +66,32 @@ func (t Target) Import(busId string) (*AttachedDevice, error) {
 		return nil, errors.New("import command returned unexpected busId")
 	}
 
-	port, err := c.attachImported(resp)
+	return &resp, nil
+}
+
+func (t Target) Import(busId string, vhci driver.VHCIDriver) (*AttachedDevice, error) {
+	c, err := t.Dial()
+	if err != nil {
+		return nil, err
+	}
+
+	defer c.Close()
+
+	resp, err := c.requestImport(busId)
+	if err != nil {
+		return nil, err
+	}
+
+	port, err := c.attachImported(*resp, vhci)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to attach imported device")
 	}
 	var description *driver.USBIPDeviceDescription
 	for i := 0; i < waitForDeviceReadyAttempts; i++ {
-		if description, err = c.describeAttached(port); err == nil {
+		if err = vhci.UpdateAttachedDevices(); err != nil {
+			break
+		}
+		if description, err = driver.DescribeAttached(port, vhci); err == nil {
 			break
 		}
 		time.Sleep(waitForDeviceReadyStep)
@@ -102,6 +115,24 @@ func (t Target) Import(busId string) (*AttachedDevice, error) {
 	}
 
 	return attachedDev, nil
+}
+
+func Detach(port driver.VirtualPort, vhci driver.VHCIDriver) error {
+	err := vhci.DetachDevice(port)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < waitForDeviceReadyAttempts; i++ {
+		if err = vhci.UpdateAttachedDevices(); err != nil {
+			break
+		}
+		if vhci.GetDeviceSlots()[port].Status == driver.VDevStatusNull {
+			break
+		}
+		time.Sleep(waitForDeviceReadyStep)
+	}
+	return err
 }
 
 func FindDevMountPath(description *driver.USBIPDeviceDescription) (string, error) {
@@ -138,15 +169,9 @@ func FindDevMountPath(description *driver.USBIPDeviceDescription) (string, error
 
 }
 
-func (c *Connection) attachImported(resp usbipImportResponse) (driver.VirtualPort, error) {
-	vhci, err := driver.NewVHCIDriver()
-	if err != nil {
-		return driver.VirtualPort(0), err
-	}
-	defer vhci.Close()
-
+func (c *Connection) attachImported(resp usbipImportResponse, vhci driver.VHCIDriver) (driver.VirtualPort, error) {
 	port, err := vhci.AttachDevice(
-		c.connection.(*net.TCPConn),
+		c.connection,
 		resp.BusNum<<16|resp.DevNum,
 		resp.Speed,
 	)
@@ -155,20 +180,4 @@ func (c *Connection) attachImported(resp usbipImportResponse) (driver.VirtualPor
 	}
 
 	return port, err
-}
-
-func (c *Connection) describeAttached(port driver.VirtualPort) (*driver.USBIPDeviceDescription, error) {
-	vhci, err := driver.NewVHCIDriver()
-	if err != nil {
-		return nil, err
-	}
-	defer vhci.Close()
-
-	var description *driver.USBIPDeviceDescription
-	if int(port) > len(vhci.AttachedDevices) {
-		return nil, errors.Newf("port number %d out of bounds", port)
-	}
-	description = vhci.AttachedDevices[port].Description
-
-	return description, nil
 }
