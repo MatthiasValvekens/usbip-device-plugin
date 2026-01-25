@@ -22,11 +22,20 @@ package deviceplugin
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
 
+	"github.com/MatthiasValvekens/usbip-device-plugin/usbip"
+	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
+)
+
+const (
+	waitForDevNodesReadyStep = 3 * time.Second
+	waitForDevNodesAttempts  = 5
 )
 
 type USBIPPlugin struct {
@@ -118,6 +127,10 @@ func (up *USBIPPlugin) Allocate(_ context.Context, req *v1beta1.AllocateRequest)
 				if err != nil {
 					return nil, err
 				}
+				err = waitForDevNodes(dev, attachedDeviceRef)
+				if err != nil {
+					return nil, err
+				}
 				attachedDevice = attachedDeviceRef
 				up.manager.attachedDevices[id] = attachedDeviceRef
 				_ = up.logger.Log("msg", "Attached device", "details", attachedDevice)
@@ -138,6 +151,31 @@ func (up *USBIPPlugin) Allocate(_ context.Context, req *v1beta1.AllocateRequest)
 	}
 	up.allocationsCounter.Add(float64(len(res.ContainerResponses)))
 	return res, nil
+}
+
+func checkDevNodeAvailability(devConfig *KnownDevice, device *usbip.AttachedDevice) error {
+
+	if _, err := os.Stat(device.DevMountPath); err != nil {
+		return errors.Wrapf(err, "Main device node at %s not found", err)
+	}
+	for _, extraDev := range devConfig.ExtraDevices {
+		if _, err := os.Stat(extraDev.HostPath); err != nil {
+			return errors.Wrapf(err, "Extra device at %s not found", extraDev.HostPath)
+		}
+	}
+	return nil
+}
+
+func waitForDevNodes(devConfig *KnownDevice, device *usbip.AttachedDevice) error {
+	var latestErr error
+	for i := 0; i < waitForDevNodesAttempts; i++ {
+		if latestErr = checkDevNodeAvailability(devConfig, device); latestErr == nil {
+			break
+		}
+		time.Sleep(waitForDevNodesReadyStep)
+	}
+
+	return latestErr
 }
 
 // GetDevicePluginOptions always returns an empty response.

@@ -156,7 +156,7 @@ func Main() error {
 	idsByResource := make(map[string][]string, len(deviceSpecs))
 	pluginPath := viper.GetString("plugin-directory")
 	podResourcesSocket := viper.GetString("pod-resources-socket")
-	vhci, err := driver.NewVHCIDriver()
+	vhci, err := driver.NewLibUdevVHCIDriver()
 	if err != nil {
 		return errors.Wrap(err, "failed to set up VHCI driver")
 	}
@@ -196,7 +196,7 @@ func Main() error {
 
 func main() {
 	if err := Main(); err != nil {
-		fmt.Fprintf(os.Stderr, "Execution failed: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Execution failed: %v\n", err)
 		os.Exit(1)
 	}
 }

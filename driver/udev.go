@@ -135,18 +135,19 @@ func (d *UdevDevice) readSpeed() USBDeviceSpeed {
 func (d *UdevDevice) Describe() (*USBIPDeviceDescription, error) {
 
 	cName := C.udev_device_get_sysname(d.device)
+	name := C.GoString(cName)
 
 	var path = [256]byte{}
 	var busid = [32]byte{}
 
 	copy(path[:], d.sysPath[:255])
 	path[255] = 0
-	C.strncpy(cName, (*C.char)(&busid[0]), 31)
+	copy(busid[:], name[:31])
 	busid[31] = 0
 
 	var busnum, devnum uint32
 
-	_, busnumErr := fmt.Sscanf(C.GoString(cName), "%d-%d", &busnum, &devnum)
+	_, busnumErr := fmt.Sscanf(name, "%d-%d", &busnum, &devnum)
 	speed := d.readSpeed()
 
 	vendor, vendErr := d.readDeviceUint16HexAttribute("idVendor")

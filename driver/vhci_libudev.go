@@ -216,3 +216,38 @@ func (d *libUdevVHCIDriver) Close() {
 	d.hostController.Close()
 	d.hostController.context.Close()
 }
+
+func NewLibUdevVHCIDriver() (VHCIDriver, error) {
+	udev := NewContext()
+	if udev == nil {
+		return nil, errors.New("failed to open udev")
+	}
+
+	hostController, err := udev.NewDeviceFromSubsystemSysname(
+		VHCIControllerBusType,
+		VHCIControllerDeviceName,
+	)
+
+	nPorts, err := countPorts(hostController)
+	if err != nil {
+		return nil, err
+	}
+
+	nControllers, err := countControllers(hostController)
+	if err != nil {
+		return nil, err
+	}
+
+	driver := &libUdevVHCIDriver{
+		hostController:       hostController,
+		AvailableControllers: nControllers,
+		AttachedDevices:      make([]USBIPAttachedDevice, nPorts),
+	}
+
+	err = driver.UpdateAttachedDevices()
+	if err != nil {
+		return nil, err
+	}
+
+	return driver, nil
+}
