@@ -183,7 +183,7 @@ func (d *libUdevVHCIDriver) AttachDevice(conn *net.TCPConn, deviceId uint32, spe
 
 func (d *libUdevVHCIDriver) doAttachDevice(port VirtualPort, fd uint, deviceId uint32, speed USBDeviceSpeed) error {
 	attachPath := path.Join(d.hostController.sysPath, "attach")
-	attachStr := fmt.Sprintf("%d %d %d %d", port, fd, deviceId, speed)
+	attachStr := fmt.Sprintf("%d %d %d %d\n", port, fd, deviceId, speed)
 	return writeStringToFile(attachPath, attachStr)
 }
 
@@ -192,7 +192,7 @@ func (d *libUdevVHCIDriver) DetachDevice(port VirtualPort) error {
 		return errors.Newf("port number %d out of bounds", port)
 	}
 	detachPath := path.Join(d.hostController.sysPath, "detach")
-	detachStr := fmt.Sprintf("%d", port)
+	detachStr := fmt.Sprintf("%d\n", port)
 	return writeStringToFile(detachPath, detachStr)
 }
 

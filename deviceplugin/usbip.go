@@ -222,6 +222,9 @@ func (dm *DeviceManager) enumerateAttachedDevices() error {
 	vhci := dm.vhciDriver
 
 	for _, attachedDev := range vhci.GetDeviceSlots() {
+		if attachedDev.Status == driver.VDevStatusNull || attachedDev.Status == driver.VDevStatusNotAssigned {
+			continue
+		}
 		_ = dm.logger.Log("msg", "attempting to pair attached USB/IP device with known device...", "port", attachedDev.Port, "device", attachedDev)
 		dev := usbip.Device{
 			Vendor:  usbip.USBID(attachedDev.Description.Vendor),

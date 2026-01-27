@@ -145,10 +145,10 @@ func (d *UdevDevice) Describe() (*USBIPDeviceDescription, error) {
 	var path = [256]byte{}
 	var busid = [32]byte{}
 
-	copy(path[:], d.sysPath[:255])
-	path[255] = 0
-	copy(busid[:], name[:31])
-	busid[31] = 0
+	sysPathLen := min(len(d.sysPath), 255)
+	copy(path[:], d.sysPath[:sysPathLen])
+	busidLen := min(len(name), 31)
+	copy(busid[:], name[:busidLen])
 
 	var busnum, devnum uint32
 
