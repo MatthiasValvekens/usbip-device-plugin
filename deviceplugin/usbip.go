@@ -58,6 +58,7 @@ func (kd *KnownDevice) SelectorMatches(cand usbip.Device) bool {
 
 type DeviceManager struct {
 	vhciDriver         driver.VHCIDriver
+	dialer             usbip.Dialer
 	knownDevices       map[string]*KnownDevice
 	attachedDevices    map[string]*usbip.AttachedDevice
 	podResourcesSocket string
@@ -66,7 +67,7 @@ type DeviceManager struct {
 	subscribers        []chan []string
 }
 
-func NewDeviceManager(podResourcesSocket string, logger log.Logger, vhci driver.VHCIDriver) *DeviceManager {
+func NewDeviceManager(podResourcesSocket string, logger log.Logger, vhci driver.VHCIDriver, dialer usbip.Dialer) *DeviceManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -77,6 +78,7 @@ func NewDeviceManager(podResourcesSocket string, logger log.Logger, vhci driver.
 		logger:             logger,
 		subscribers:        make([]chan []string, 0),
 		vhciDriver:         vhci,
+		dialer:             dialer,
 	}
 }
 
@@ -164,7 +166,7 @@ func (dm *DeviceManager) Start() error {
 }
 
 func (dm *DeviceManager) refreshTarget(target usbip.Target) ([]string, error) {
-	conn, err := target.Dial()
+	conn, err := dm.dialer.Dial(target)
 
 	if err != nil {
 		return nil, err
@@ -172,7 +174,7 @@ func (dm *DeviceManager) refreshTarget(target usbip.Target) ([]string, error) {
 
 	defer conn.Close()
 
-	lst, err := conn.List()
+	lst, err := conn.ListRequest()
 
 	changed := make([]string, 0)
 	for devId, kd := range dm.knownDevices {

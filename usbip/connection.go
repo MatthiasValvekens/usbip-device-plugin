@@ -7,7 +7,9 @@ import (
 	"github.com/efficientgo/core/errors"
 )
 
-func (t Target) Dial() (usbipConn *Connection, err error) {
+type NetDialer struct{}
+
+func (_ NetDialer) Dial(t Target) (Client, error) {
 	targetString := t.Host + ":" + strconv.Itoa(t.Port)
 	conn, err := net.Dial("tcp", targetString)
 
@@ -18,7 +20,7 @@ func (t Target) Dial() (usbipConn *Connection, err error) {
 		)
 	}
 
-	usbipConn = &Connection{
+	usbipConn := &Connection{
 		Target:     t,
 		connection: conn.(*net.TCPConn),
 	}

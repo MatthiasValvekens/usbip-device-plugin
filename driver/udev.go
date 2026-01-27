@@ -1,5 +1,10 @@
 package driver
 
+// TODO the way this package uses udev is killing a mosquito with a bazooka
+//  Since we only use get_syspath, get_sysattr_value and get_parent, we
+//  might as well read from sysfs directly, remove the dependency on libudev/cgo
+//  and turn this thing into a distroless image
+
 // #include <libudev.h>
 // #include <stdlib.h>
 // #include <string.h>

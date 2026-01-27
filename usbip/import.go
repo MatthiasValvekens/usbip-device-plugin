@@ -29,7 +29,7 @@ type usbipImportResponse struct {
 	driver.USBIPDeviceDescription
 }
 
-func (c *Connection) requestImport(busId string) (*usbipImportResponse, error) {
+func (c *Connection) ImportRequest(busId string) (*driver.USBIPDeviceDescription, error) {
 	var now = time.Now()
 	var busIdBin [32]byte
 	copy(busIdBin[:], busId)
@@ -66,23 +66,23 @@ func (c *Connection) requestImport(busId string) (*usbipImportResponse, error) {
 		return nil, errors.New("import command returned unexpected busId")
 	}
 
-	return &resp, nil
+	return &resp.USBIPDeviceDescription, nil
 }
 
-func (t Target) Import(busId string, vhci driver.VHCIDriver) (*AttachedDevice, error) {
-	c, err := t.Dial()
+func Import(busId string, t Target, vhci driver.VHCIDriver, dialer Dialer) (*AttachedDevice, error) {
+	c, err := dialer.Dial(t)
 	if err != nil {
 		return nil, err
 	}
 
 	defer c.Close()
 
-	resp, err := c.requestImport(busId)
+	resp, err := c.ImportRequest(busId)
 	if err != nil {
 		return nil, err
 	}
 
-	port, err := c.attachImported(*resp, vhci)
+	port, err := attachImported(c, *resp, vhci)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to attach imported device")
 	}
@@ -109,7 +109,7 @@ func (t Target) Import(busId string, vhci driver.VHCIDriver) (*AttachedDevice, e
 			Product: USBID(resp.Product),
 			BusId:   busId,
 		},
-		Target:       c.Target,
+		Target:       c.GetTarget(),
 		Port:         port,
 		DevMountPath: path.Join("/dev", devName),
 	}
@@ -169,9 +169,9 @@ func FindDevMountPath(description *driver.USBIPDeviceDescription) (string, error
 
 }
 
-func (c *Connection) attachImported(resp usbipImportResponse, vhci driver.VHCIDriver) (driver.VirtualPort, error) {
+func attachImported(c Client, resp driver.USBIPDeviceDescription, vhci driver.VHCIDriver) (driver.VirtualPort, error) {
 	port, err := vhci.AttachDevice(
-		c.connection,
+		c.getConnection(),
 		resp.BusNum<<16|resp.DevNum,
 		resp.Speed,
 	)

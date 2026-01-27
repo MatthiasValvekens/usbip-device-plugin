@@ -35,6 +35,26 @@ type AttachedDevice struct {
 	DevMountPath string             `json:"dev_mount_path"`
 }
 
+type Client interface {
+	GetTarget() Target
+	Close()
+	ListRequest() ([]Device, error)
+	ImportRequest(busId string) (*driver.USBIPDeviceDescription, error)
+	getConnection() *net.TCPConn
+}
+
+func (c *Connection) GetTarget() Target {
+	return c.Target
+}
+
+func (c *Connection) getConnection() *net.TCPConn {
+	return c.connection
+}
+
+type Dialer interface {
+	Dial(t Target) (Client, error)
+}
+
 type usbipHeader struct {
 	Version uint16
 	Code    uint16

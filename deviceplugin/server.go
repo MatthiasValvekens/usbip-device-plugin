@@ -123,7 +123,12 @@ func (up *USBIPPlugin) Allocate(_ context.Context, req *v1beta1.AllocateRequest)
 			dev, _ := up.selectableDevices[id]
 			attachedDevice, alreadyAttached := up.manager.attachedDevices[id]
 			if !alreadyAttached {
-				attachedDeviceRef, err := dev.Target.Import(dev.readProperties.BusId, up.manager.vhciDriver)
+				attachedDeviceRef, err := usbip.Import(
+					dev.readProperties.BusId,
+					dev.Target,
+					up.manager.vhciDriver,
+					up.manager.dialer,
+				)
 				if err != nil {
 					return nil, err
 				}

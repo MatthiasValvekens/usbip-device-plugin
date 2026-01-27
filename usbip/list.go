@@ -14,7 +14,7 @@ type usbipDevlistResponseHeader struct {
 	NumDevices uint32
 }
 
-func (c *Connection) List() ([]Device, error) {
+func (c *Connection) ListRequest() ([]Device, error) {
 	var conn = c.connection
 	var now = time.Now()
 
