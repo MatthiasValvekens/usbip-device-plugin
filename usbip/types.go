@@ -19,17 +19,8 @@ type Connection struct {
 	connection *net.TCPConn
 }
 
-type Device struct {
-	// Vendor is the USB Vendor ID of the device.
-	Vendor USBID `json:"vendor"`
-	// Product is the USB Product ID of the device.
-	Product USBID `json:"product"`
-	// BusId describes USB Bus ID of the device.
-	BusId string `json:"bus_id"`
-}
-
 type AttachedDevice struct {
-	Device
+	driver.USBDevice
 	Target       Target             `json:"target"`
 	Port         driver.VirtualPort `json:"vhc_port"`
 	DevMountPath string             `json:"dev_mount_path"`
@@ -38,7 +29,7 @@ type AttachedDevice struct {
 type Client interface {
 	GetTarget() Target
 	Close()
-	ListRequest() ([]Device, error)
+	ListRequest() ([]driver.USBDevice, error)
 	ImportRequest(busId string) (*driver.USBIPDeviceDescription, error)
 	getConnection() *net.TCPConn
 }

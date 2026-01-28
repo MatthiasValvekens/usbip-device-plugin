@@ -1,13 +1,7 @@
 package usbip
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/binary"
-	"io"
-	"os"
-	"path"
-	"strings"
 	"time"
 
 	"github.com/MatthiasValvekens/usbip-device-plugin/driver"
@@ -86,12 +80,12 @@ func Import(busId string, t Target, vhci driver.VHCIDriver, dialer Dialer) (*Att
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to attach imported device")
 	}
-	var description *driver.USBIPDeviceDescription
+	var slot *driver.VHCISlot
 	for i := 0; i < waitForDeviceReadyAttempts; i++ {
 		if err = vhci.UpdateAttachedDevices(); err != nil {
 			break
 		}
-		if description, err = driver.DescribeAttached(port, vhci); err == nil {
+		if slot, err = driver.DescribeAttached(port, vhci); err == nil {
 			break
 		}
 		time.Sleep(waitForDeviceReadyStep)
@@ -99,19 +93,15 @@ func Import(busId string, t Target, vhci driver.VHCIDriver, dialer Dialer) (*Att
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to describe attached device")
 	}
-	devName, err := FindDevMountPath(description)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to find device mount path")
-	}
 	attachedDev := &AttachedDevice{
-		Device: Device{
-			Vendor:  USBID(resp.Vendor),
-			Product: USBID(resp.Product),
+		USBDevice: driver.USBDevice{
+			Vendor:  driver.USBID(resp.Vendor),
+			Product: driver.USBID(resp.Product),
 			BusId:   busId,
 		},
 		Target:       c.GetTarget(),
 		Port:         port,
-		DevMountPath: path.Join("/dev", devName),
+		DevMountPath: slot.DevMountPath,
 	}
 
 	return attachedDev, nil
@@ -133,40 +123,6 @@ func Detach(port driver.VirtualPort, vhci driver.VHCIDriver) error {
 		time.Sleep(waitForDeviceReadyStep)
 	}
 	return err
-}
-
-func FindDevMountPath(description *driver.USBIPDeviceDescription) (string, error) {
-	parent := string(description.Path[:bytes.IndexByte(description.Path[:], 0)])
-	ueventPath := path.Join(parent, "uevent")
-
-	inf, err := os.Open(ueventPath)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to open uevent file")
-	}
-	defer func(inf *os.File) {
-		_ = inf.Close()
-	}(inf)
-
-	reader := bufio.NewReader(inf)
-	var devName string
-	var wasDevName bool
-	for {
-		line, err := reader.ReadString('\n')
-		if err == io.EOF {
-			return "", errors.Newf("failed to determine device mount; no DEVNAME in %s", ueventPath)
-		} else if err != nil {
-			return "", errors.Wrapf(err, "failed to determine device mount from %s", ueventPath)
-		}
-
-		devName, wasDevName = strings.CutPrefix(line, "DEVNAME=")
-		devName = strings.TrimSpace(devName)
-		if wasDevName {
-			break
-		}
-	}
-
-	return devName, nil
-
 }
 
 func attachImported(c Client, resp driver.USBIPDeviceDescription, vhci driver.VHCIDriver) (driver.VirtualPort, error) {

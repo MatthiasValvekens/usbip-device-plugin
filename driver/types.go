@@ -43,6 +43,7 @@ const (
 )
 
 type USBIPStatus uint32
+type USBID uint16
 
 const (
 	SDevStatusUndefined USBIPStatus = iota
@@ -57,14 +58,24 @@ const (
 
 type VirtualPort uint8
 
-type USBIPAttachedDevice struct {
+type USBDevice struct {
+	// Vendor is the USB Vendor ID of the device.
+	Vendor USBID `json:"vendor"`
+	// Product is the USB Product ID of the device.
+	Product USBID `json:"product"`
+	// BusId describes USB Bus ID of the device.
+	BusId string `json:"bus_id"`
+}
+
+type VHCISlot struct {
 	HubSpeed HubSpeed
 	Port     VirtualPort
 	Status   USBIPStatus
 
-	DeviceID uint32
-
-	Description *USBIPDeviceDescription
+	DeviceID        uint32
+	SysPath         string
+	DevMountPath    string
+	LocalDeviceInfo USBDevice
 }
 
 type VHCIDriver interface {
@@ -72,5 +83,5 @@ type VHCIDriver interface {
 	DetachDevice(port VirtualPort) error
 	UpdateAttachedDevices() error
 	Close()
-	GetDeviceSlots() []USBIPAttachedDevice
+	GetDeviceSlots() []VHCISlot
 }

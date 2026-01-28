@@ -157,7 +157,7 @@ func Main() error {
 	idsByResource := make(map[string][]string, len(deviceSpecs))
 	pluginPath := viper.GetString("plugin-directory")
 	podResourcesSocket := viper.GetString("pod-resources-socket")
-	vhci, err := driver.NewLibUdevVHCIDriver()
+	vhci, err := driver.NewSysfsVHCIDriver(os.DirFS("/"))
 	if err != nil {
 		return errors.Wrap(err, "failed to set up VHCI driver")
 	}

@@ -43,13 +43,13 @@ const (
 
 type KnownDevice struct {
 	Target         usbip.Target         `json:"target"`
-	Selector       usbip.Device         `json:"selector"`
+	Selector       driver.USBDevice     `json:"selector"`
 	ExtraDevices   []v1beta1.DeviceSpec `json:"extras"`
-	readProperties usbip.Device
+	readProperties driver.USBDevice
 	available      bool
 }
 
-func (kd *KnownDevice) SelectorMatches(cand usbip.Device) bool {
+func (kd *KnownDevice) SelectorMatches(cand driver.USBDevice) bool {
 	selector := kd.Selector
 	return (selector.BusId == "" || cand.BusId == "" || selector.BusId == cand.BusId) &&
 		(selector.Vendor == 0 || selector.Vendor == cand.Vendor) &&
@@ -211,7 +211,7 @@ func (dm *DeviceManager) refreshTarget(target usbip.Target) ([]string, error) {
 		kd.available = found
 		if wasAvailable && !found {
 			_ = dm.logger.Log("msg", "previously available device no longer available (in use by another node?)", "target", kd.Target, "selector", selector)
-			kd.readProperties = usbip.Device{}
+			kd.readProperties = driver.USBDevice{}
 		}
 	}
 
@@ -226,9 +226,9 @@ func (dm *DeviceManager) enumerateAttachedDevices() error {
 			continue
 		}
 		_ = dm.logger.Log("msg", "attempting to pair attached USB/IP device with known device...", "port", attachedDev.Port, "device", attachedDev)
-		dev := usbip.Device{
-			Vendor:  usbip.USBID(attachedDev.Description.Vendor),
-			Product: usbip.USBID(attachedDev.Description.Product),
+		dev := driver.USBDevice{
+			Vendor:  attachedDev.LocalDeviceInfo.Vendor,
+			Product: attachedDev.LocalDeviceInfo.Product,
 			// we intentionally do _not_ set BusId since the bus ID on the remote is not part of the data
 			// available to us
 			// (TODO: try to figure out if it's somewhere else in sysfs)
@@ -242,15 +242,10 @@ func (dm *DeviceManager) enumerateAttachedDevices() error {
 				continue
 			}
 			_ = dm.logger.Log("msg", "attached device matched with known device", "port", attachedDev.Port, "matched", devId)
-			var mountPath string
-			mountPath, err := usbip.FindDevMountPath(attachedDev.Description)
-			if err != nil {
-				_ = dm.logger.Log("msg", "failed to find path to device", "port", attachedDev.Port, "matched", devId, "err", err)
-				break
-			}
+			mountPath := attachedDev.DevMountPath
 			found = true
 			dm.attachedDevices[devId] = &usbip.AttachedDevice{
-				Device:       dev,
+				USBDevice:    dev,
 				Target:       kd.Target,
 				Port:         attachedDev.Port,
 				DevMountPath: mountPath,

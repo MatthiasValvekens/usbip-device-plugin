@@ -14,7 +14,7 @@ type usbipDevlistResponseHeader struct {
 	NumDevices uint32
 }
 
-func (c *Connection) ListRequest() ([]Device, error) {
+func (c *Connection) ListRequest() ([]driver.USBDevice, error) {
 	var conn = c.connection
 	var now = time.Now()
 
@@ -41,7 +41,7 @@ func (c *Connection) ListRequest() ([]Device, error) {
 		return nil, errors.New("devlist command returned error")
 	}
 
-	devices := make([]Device, hdr.NumDevices)
+	devices := make([]driver.USBDevice, hdr.NumDevices)
 	dev := driver.USBIPDeviceDescription{}
 	var tmpBuf = [1024]byte{}
 	for devIx := 0; devIx < int(hdr.NumDevices); devIx++ {
@@ -49,9 +49,9 @@ func (c *Connection) ListRequest() ([]Device, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to read devices in devlist response")
 		}
-		devices[devIx] = Device{
-			Vendor:  USBID(dev.Vendor),
-			Product: USBID(dev.Product),
+		devices[devIx] = driver.USBDevice{
+			Vendor:  driver.USBID(dev.Vendor),
+			Product: driver.USBID(dev.Product),
 			BusId:   string(dev.BusId[:bytes.IndexByte(dev.BusId[:], 0)]),
 		}
 		// skip over the interface sections
