@@ -157,11 +157,17 @@ func Main() error {
 	idsByResource := make(map[string][]string, len(deviceSpecs))
 	pluginPath := viper.GetString("plugin-directory")
 	podResourcesSocket := viper.GetString("pod-resources-socket")
-	vhci, err := driver.NewSysfsVHCIDriver(os.DirFS("/"))
+	sysroot, err := os.OpenRoot("/sys")
+	if err != nil {
+		return errors.Wrap(err, "failed to open /sys")
+	}
+	defer func(sysroot *os.Root) {
+		_ = sysroot.Close()
+	}(sysroot)
+	vhci, err := driver.NewSysfsVHCIDriver(sysroot.FS())
 	if err != nil {
 		return errors.Wrap(err, "failed to set up VHCI driver")
 	}
-	defer vhci.Close()
 	dm := deviceplugin.NewDeviceManager(podResourcesSocket, logger, vhci, usbip.NetDialer{})
 	for name, devs := range deviceSpecs {
 		registeredIds, err := dm.Register(name, devs)

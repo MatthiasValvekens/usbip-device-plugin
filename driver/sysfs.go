@@ -21,7 +21,7 @@ type sysfsVHCIDriver struct {
 }
 
 const (
-	sysBus = "/sys/bus"
+	sysBus = "bus"
 )
 
 func hostControllerPath() string {
@@ -104,28 +104,6 @@ func (d *sysfsVHCIDriver) countControllers() error {
 
 	d.AvailableControllers = count
 	return nil
-}
-
-func (d *sysfsVHCIDriver) readSpeed(sysPath string) USBDeviceSpeed {
-	speedStr, err := d.readDeviceAttribute(sysPath, "speed")
-	if err != nil {
-		return USBSpeedUnknown
-	}
-
-	switch speedStr {
-	case "1.5":
-		return USBSpeedLow
-	case "12":
-		return USBSpeedFull
-	case "480":
-		return USBSpeedHigh
-	case "53.3-480":
-		return USBSpeedWireless
-	case "5000":
-		return USBSpeedSuper
-	default:
-		return USBSpeedUnknown
-	}
 }
 
 func (d *sysfsVHCIDriver) describeUsbFromBusId(attachedDevice *VHCISlot, busId string) error {
@@ -293,9 +271,6 @@ func writeStringToFile(path string, content string) error {
 		return errors.Wrapf(err, "failed to write command to %s", path)
 	}
 	return nil
-}
-
-func (d *sysfsVHCIDriver) Close() {
 }
 
 func NewSysfsVHCIDriver(fsys fs.FS) (VHCIDriver, error) {

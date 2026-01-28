@@ -82,6 +82,5 @@ type VHCIDriver interface {
 	AttachDevice(conn *net.TCPConn, deviceId uint32, speed USBDeviceSpeed) (VirtualPort, error)
 	DetachDevice(port VirtualPort) error
 	UpdateAttachedDevices() error
-	Close()
 	GetDeviceSlots() []VHCISlot
 }
