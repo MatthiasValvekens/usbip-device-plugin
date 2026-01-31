@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/efficientgo/core/errors"
@@ -21,6 +22,7 @@ type sysfsVHCIDriver struct {
 }
 
 const (
+	Sys    = "/sys"
 	sysBus = "bus"
 )
 
@@ -42,6 +44,19 @@ func (d *sysfsVHCIDriver) readDeviceAttribute(sysPath string, attributeName stri
 		return "", err
 	}
 	return strings.TrimSpace(string(content)), nil
+}
+
+func (d *sysfsVHCIDriver) readDeviceUint16Attribute(sysPath string, attributeName string) (uint16, error) {
+	attrStr, err := d.readDeviceAttribute(sysPath, attributeName)
+	if err != nil {
+		return 0, err
+	}
+	var result uint16 = 0
+	_, err = fmt.Sscanf(attrStr, "%d", &result)
+	if err != nil {
+		return 0, errors.Wrapf(err, "failed to read device attribute %s", attributeName)
+	}
+	return result, nil
 }
 
 func (d *sysfsVHCIDriver) readDeviceUint8HexAttribute(sysPath string, attributeName string) (uint8, error) {
@@ -112,7 +127,11 @@ func (d *sysfsVHCIDriver) describeUsbFromBusId(attachedDevice *VHCISlot, busId s
 	vendor, vendErr := d.readDeviceUint16HexAttribute(sysPath, "idVendor")
 	product, prodErr := d.readDeviceUint16HexAttribute(sysPath, "idProduct")
 
-	totalErr := baseerrors.Join(vendErr, prodErr)
+	// TODO check base convention
+	busnum, busnumErr := d.readDeviceUint16Attribute(sysPath, "busnum")
+	devnum, devnumErr := d.readDeviceUint16Attribute(sysPath, "devnum")
+
+	totalErr := baseerrors.Join(vendErr, prodErr, busnumErr, devnumErr)
 
 	if totalErr != nil {
 		return errors.Wrap(totalErr, "failed to describe device")
@@ -123,6 +142,7 @@ func (d *sysfsVHCIDriver) describeUsbFromBusId(attachedDevice *VHCISlot, busId s
 		Vendor:  USBID(vendor),
 		Product: USBID(product),
 	}
+	attachedDevice.DevMountPath = fmt.Sprintf("/dev/bus/usb/%03d/%03d", busnum, devnum)
 	return nil
 }
 
@@ -171,11 +191,6 @@ func (d *sysfsVHCIDriver) updateDevicesFromControllerStatus(statusContent string
 			if err != nil {
 				return errors.Wrapf(err, "failed to describe device %s", busId)
 			}
-		}
-
-		device.DevMountPath, err = d.findDevMountPath(device.SysPath)
-		if err != nil {
-			return errors.Wrapf(err, "failed to find device mount path for %s", busId)
 		}
 	}
 	return nil
@@ -245,7 +260,7 @@ func (d *sysfsVHCIDriver) AttachDevice(conn *net.TCPConn, deviceId uint32, speed
 func (d *sysfsVHCIDriver) doAttachDevice(port VirtualPort, fd uint, deviceId uint32, speed USBDeviceSpeed) error {
 	attachPath := path.Join(hostControllerPath(), "attach")
 	attachStr := fmt.Sprintf("%d %d %d %d\n", port, fd, deviceId, speed)
-	return writeStringToFile(attachPath, attachStr)
+	return d.writeStringToFile(attachPath, attachStr)
 }
 
 func (d *sysfsVHCIDriver) DetachDevice(port VirtualPort) error {
@@ -254,11 +269,11 @@ func (d *sysfsVHCIDriver) DetachDevice(port VirtualPort) error {
 	}
 	detachPath := path.Join(hostControllerPath(), "detach")
 	detachStr := fmt.Sprintf("%d\n", port)
-	return writeStringToFile(detachPath, detachStr)
+	return d.writeStringToFile(detachPath, detachStr)
 }
 
-func writeStringToFile(path string, content string) error {
-	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+func (d *sysfsVHCIDriver) writeStringToFile(path string, content string) error {
+	f, err := os.OpenFile(filepath.Join(Sys, path), os.O_WRONLY, 0)
 	if err != nil {
 		return errors.Wrapf(err, "failed to open %s for writing", path)
 	}
@@ -294,25 +309,4 @@ func NewSysfsVHCIDriver(fsys fs.FS) (VHCIDriver, error) {
 	}
 
 	return driver, nil
-}
-
-func (d *sysfsVHCIDriver) findDevMountPath(sysPath string) (string, error) {
-	ueventPath := path.Join(sysPath, "uevent")
-
-	contents, err := fs.ReadFile(d.fsys, ueventPath)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to open uevent file")
-	}
-	lines := strings.Split(string(contents), "\n")
-	var devName string
-	var wasDevName bool
-	for _, line := range lines {
-		devName, wasDevName = strings.CutPrefix(line, "DEVNAME=")
-		devName = strings.TrimSpace(devName)
-		if wasDevName {
-			break
-		}
-	}
-
-	return path.Join("/dev", devName), nil
 }

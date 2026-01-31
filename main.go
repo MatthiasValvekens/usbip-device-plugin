@@ -157,7 +157,7 @@ func Main() error {
 	idsByResource := make(map[string][]string, len(deviceSpecs))
 	pluginPath := viper.GetString("plugin-directory")
 	podResourcesSocket := viper.GetString("pod-resources-socket")
-	sysroot, err := os.OpenRoot("/sys")
+	sysroot, err := os.OpenRoot(driver.Sys)
 	if err != nil {
 		return errors.Wrap(err, "failed to open /sys")
 	}
