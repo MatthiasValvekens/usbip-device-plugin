@@ -21,7 +21,7 @@ func compareSlots(t *testing.T, driver VHCIDriver, expectedSlots map[int]VHCISlo
 
 	for i, slot := range slots {
 		_, isExpected := expectedSlots[i]
-		if slot.Status != VDevStatusNull && !isExpected {
+		if !slot.IsEmpty() && !isExpected {
 			t.Errorf("port %d: status is %d, expected null", i, slot.Status)
 		}
 	}

@@ -6,6 +6,23 @@ import (
 	"github.com/MatthiasValvekens/usbip-device-plugin/driver"
 )
 
+type DeviceDescription struct {
+	Path                     [256]byte
+	BusId                    [32]byte
+	BusNum                   uint32
+	DevNum                   uint32
+	Speed                    driver.USBDeviceSpeed
+	Vendor                   uint16
+	Product                  uint16
+	BCDDevice                uint16
+	DeviceClass              uint8
+	DeviceSubClass           uint8
+	DeviceProtocol           uint8
+	DeviceConfigurationValue uint8
+	NumConfigurations        uint8
+	NumInterfaces            uint8
+}
+
 // USBID is a representation of a platform or vendor ID under the USB standard (see gousb.ID)
 type USBID uint16
 
@@ -30,7 +47,7 @@ type Client interface {
 	GetTarget() Target
 	Close()
 	ListRequest() ([]driver.USBDevice, error)
-	ImportRequest(busId string) (*driver.USBIPDeviceDescription, error)
+	ImportRequest(busId string) (*DeviceDescription, error)
 	getConnection() *net.TCPConn
 }
 

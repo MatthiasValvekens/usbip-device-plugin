@@ -20,10 +20,10 @@ type usbipImportRequest struct {
 
 type usbipImportResponse struct {
 	usbipHeader
-	driver.USBIPDeviceDescription
+	DeviceDescription
 }
 
-func (c *Connection) ImportRequest(busId string) (*driver.USBIPDeviceDescription, error) {
+func (c *Connection) ImportRequest(busId string) (*DeviceDescription, error) {
 	var now = time.Now()
 	var busIdBin [32]byte
 	copy(busIdBin[:], busId)
@@ -60,7 +60,7 @@ func (c *Connection) ImportRequest(busId string) (*driver.USBIPDeviceDescription
 		return nil, errors.New("import command returned unexpected busId")
 	}
 
-	return &resp.USBIPDeviceDescription, nil
+	return &resp.DeviceDescription, nil
 }
 
 func Import(busId string, t Target, vhci driver.VHCIDriver, dialer Dialer) (*AttachedDevice, error) {
@@ -117,7 +117,7 @@ func Detach(port driver.VirtualPort, vhci driver.VHCIDriver) error {
 		if err = vhci.UpdateAttachedDevices(); err != nil {
 			break
 		}
-		if vhci.GetDeviceSlots()[port].Status == driver.VDevStatusNull {
+		if vhci.GetDeviceSlots()[port].IsEmpty() {
 			break
 		}
 		time.Sleep(waitForDeviceReadyStep)
@@ -125,7 +125,7 @@ func Detach(port driver.VirtualPort, vhci driver.VHCIDriver) error {
 	return err
 }
 
-func attachImported(c Client, resp driver.USBIPDeviceDescription, vhci driver.VHCIDriver) (driver.VirtualPort, error) {
+func attachImported(c Client, resp DeviceDescription, vhci driver.VHCIDriver) (driver.VirtualPort, error) {
 	port, err := vhci.AttachDevice(
 		c.getConnection(),
 		resp.BusNum<<16|resp.DevNum,

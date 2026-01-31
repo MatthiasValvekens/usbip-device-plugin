@@ -224,7 +224,7 @@ func (d *sysfsVHCIDriver) GetFreePort(speed USBDeviceSpeed) (VirtualPort, error)
 			continue
 		}
 
-		if device.Status == VDevStatusNull {
+		if device.IsEmpty() {
 			return device.Port, nil
 		}
 	}

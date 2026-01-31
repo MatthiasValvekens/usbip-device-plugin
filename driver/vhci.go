@@ -4,15 +4,23 @@ import (
 	"github.com/efficientgo/core/errors"
 )
 
+func (p *VHCISlot) IsDeviceConnected() bool {
+	return p.Status == VDevStatusUsed
+}
+
+func (p *VHCISlot) IsEmpty() bool {
+	return p.Status == VDevStatusNull
+}
+
 func DescribeAttached(port VirtualPort, vhci VHCIDriver) (*VHCISlot, error) {
 	var devices = vhci.GetDeviceSlots()
 	if int(port) > len(devices) {
 		return nil, errors.Newf("port number %d out of bounds", port)
 	}
-	attachedDevice := devices[port]
-	if attachedDevice.Status != VDevStatusUsed {
+	slot := devices[port]
+	if slot.IsDeviceConnected() {
 		return nil, errors.Newf("no device attached to port %d", port)
 	}
 
-	return &attachedDevice, nil
+	return &slot, nil
 }

@@ -42,7 +42,7 @@ func (c *Connection) ListRequest() ([]driver.USBDevice, error) {
 	}
 
 	devices := make([]driver.USBDevice, hdr.NumDevices)
-	dev := driver.USBIPDeviceDescription{}
+	dev := DeviceDescription{}
 	var tmpBuf = [1024]byte{}
 	for devIx := 0; devIx < int(hdr.NumDevices); devIx++ {
 		err = binary.Read(conn, binary.BigEndian, &dev)

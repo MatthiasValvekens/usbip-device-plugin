@@ -13,23 +13,6 @@ const (
 	USBSpeedSuper
 )
 
-type USBIPDeviceDescription struct {
-	Path                     [256]byte
-	BusId                    [32]byte
-	BusNum                   uint32
-	DevNum                   uint32
-	Speed                    USBDeviceSpeed
-	Vendor                   uint16
-	Product                  uint16
-	BCDDevice                uint16
-	DeviceClass              uint8
-	DeviceSubClass           uint8
-	DeviceProtocol           uint8
-	DeviceConfigurationValue uint8
-	NumConfigurations        uint8
-	NumInterfaces            uint8
-}
-
 const (
 	VHCIControllerBusType    = "platform"
 	VHCIControllerDeviceName = "vhci_hcd.0"
