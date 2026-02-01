@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: Apache-2.0
 
 package main
 
-// This project is GPL-2.0, but this file contains code from generic-device-plugin.
+// This file contains code from generic-device-plugin.
 // Original license notice below.
 //
 // Copyright 2020 the generic-device-plugin authors
