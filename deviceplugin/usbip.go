@@ -147,6 +147,9 @@ func (dm *DeviceManager) AddRefreshJob(group *run.Group) {
 }
 
 func (dm *DeviceManager) Start() error {
+	if err := dm.enumerateAttachedDevices(); err != nil {
+		return errors.Wrapf(err, "Failed to enumerate attached devices.")
+	}
 	for i := 0; i < 10; i++ {
 		_ = dm.logger.Log("msg", "Refreshing USB/IP devices...")
 		if _, err := dm.refreshDevices(); err == nil {
@@ -154,10 +157,6 @@ func (dm *DeviceManager) Start() error {
 		}
 		_ = dm.logger.Log("msg", "Device refresh failed, sleeping for a while...")
 		time.Sleep(10 * time.Second)
-	}
-
-	if err := dm.enumerateAttachedDevices(); err != nil {
-		return errors.Wrapf(err, "Failed to enumerate attached devices.")
 	}
 
 	_ = dm.logger.Log("msg", "device manager ready")
@@ -223,7 +222,8 @@ func (dm *DeviceManager) enumerateAttachedDevices() error {
 
 	_ = dm.logger.Log("msg", "Enumerating attached devices...", "slots", len(slots))
 
-	for _, attachedDev := range slots {
+	for i := 0; i < len(slots); i++ {
+		attachedDev := &slots[i]
 		if !attachedDev.IsDeviceConnected() {
 			continue
 		}

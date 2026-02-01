@@ -18,7 +18,7 @@ func DescribeAttached(port VirtualPort, vhci VHCIDriver) (*VHCISlot, error) {
 		return nil, errors.Newf("port number %d out of bounds", port)
 	}
 	slot := devices[port]
-	if slot.IsDeviceConnected() {
+	if !slot.IsDeviceConnected() {
 		return nil, errors.Newf("no device attached to port %d", port)
 	}
 

@@ -105,17 +105,21 @@ func (up *USBIPPlugin) GetDeviceState(_ string) string {
 func (up *USBIPPlugin) Allocate(_ context.Context, req *v1beta1.AllocateRequest) (*v1beta1.AllocateResponse, error) {
 	up.manager.mu.Lock()
 	defer up.manager.mu.Unlock()
+	var err error
 	res := &v1beta1.AllocateResponse{
 		ContainerResponses: make([]*v1beta1.ContainerAllocateResponse, 0, len(req.ContainerRequests)),
 	}
-	for _, r := range req.ContainerRequests {
+	for containerRequestIndex, r := range req.ContainerRequests {
 		resp := new(v1beta1.ContainerAllocateResponse)
+		_ = level.Info(up.logger).Log("msg", "Received request for devices", "devices", r.DevicesIds, "index", containerRequestIndex)
 		for _, id := range r.DevicesIds {
 			dev, ok := up.selectableDevices[id]
 			if !ok {
+				_ = level.Warn(up.logger).Log("msg", "Requested device does not exist", "id", id)
 				return nil, fmt.Errorf("requested device does not exist %s", id)
 			}
 			if !dev.available {
+				_ = level.Warn(up.logger).Log("msg", "Requested device is not available", "id", id)
 				return nil, fmt.Errorf("requested device %s is not available", id)
 			}
 		}
@@ -123,22 +127,24 @@ func (up *USBIPPlugin) Allocate(_ context.Context, req *v1beta1.AllocateRequest)
 			dev, _ := up.selectableDevices[id]
 			attachedDevice, alreadyAttached := up.manager.attachedDevices[id]
 			if !alreadyAttached {
-				attachedDeviceRef, err := usbip.Import(
+				attachedDevice, err = usbip.Import(
 					dev.readProperties.BusId,
 					dev.Target,
 					up.manager.vhciDriver,
 					up.manager.dialer,
 				)
 				if err != nil {
+					_ = level.Info(up.logger).Log("msg", "USB/IP import failed", "device", dev)
 					return nil, err
 				}
-				err = waitForDevNodes(dev, attachedDeviceRef)
+				_ = level.Info(up.logger).Log("msg", "Waiting for /dev nodes for device...", "details", attachedDevice)
+				err = waitForDevNodes(dev, attachedDevice)
 				if err != nil {
+					_ = level.Warn(up.logger).Log("msg", "/dev nodes for device never appeared", "details", attachedDevice, "err", err)
 					return nil, err
 				}
-				attachedDevice = attachedDeviceRef
-				up.manager.attachedDevices[id] = attachedDeviceRef
-				_ = up.logger.Log("msg", "Attached device", "details", attachedDevice)
+				up.manager.attachedDevices[id] = attachedDevice
+				_ = level.Warn(up.logger).Log("msg", "Attached device", "details", attachedDevice)
 			}
 			resp.Devices = append(
 				resp.Devices,

@@ -164,7 +164,7 @@ func Main() error {
 	defer func(sysroot *os.Root) {
 		_ = sysroot.Close()
 	}(sysroot)
-	vhci, err := driver.NewSysfsVHCIDriver(sysroot.FS())
+	vhci, err := driver.NewSysfsVHCIDriver(sysroot.FS(), logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to set up VHCI driver")
 	}

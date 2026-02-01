@@ -102,7 +102,7 @@ func TestSlotEnumeration(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			driver, err := NewSysfsVHCIDriver(tc.fs)
+			driver, err := NewSysfsVHCIDriver(tc.fs, nil)
 			if (err != nil) != (tc.err != nil) {
 				t.Errorf("expected error %v; got %v", tc.err, err)
 			}
@@ -134,7 +134,7 @@ func TestDetachUpdate(t *testing.T) {
 		"bus/usb/devices/2-2/devnum":    {Data: []byte("34\n")},
 	}
 
-	driver, err := NewSysfsVHCIDriver(fsys)
+	driver, err := NewSysfsVHCIDriver(fsys, nil)
 
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestAttachUpdate(t *testing.T) {
 		"bus/usb/devices/2-1/devnum":    {Data: []byte("33\n")},
 	}
 
-	driver, err := NewSysfsVHCIDriver(fsys)
+	driver, err := NewSysfsVHCIDriver(fsys, nil)
 
 	if err != nil {
 		t.Fatal(err)

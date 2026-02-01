@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/efficientgo/core/errors"
+	"github.com/go-kit/log"
 )
 
 type sysfsVHCIDriver struct {
@@ -19,6 +20,8 @@ type sysfsVHCIDriver struct {
 	AvailableControllers uint
 
 	AttachedDevices []VHCISlot
+
+	logger log.Logger
 }
 
 const (
@@ -112,7 +115,7 @@ func (d *sysfsVHCIDriver) countControllers() error {
 		return errors.Wrap(err, "failed to read platform sysdir")
 	}
 	for _, file := range files {
-		if file.IsDir() && strings.HasPrefix(file.Name(), "vhci_hcd.") {
+		if strings.HasPrefix(file.Name(), "vhci_hcd.") {
 			count++
 		}
 	}
@@ -187,6 +190,7 @@ func (d *sysfsVHCIDriver) updateDevicesFromControllerStatus(statusContent string
 		if status == VDevStatusNull || status == VDevStatusNotAssigned {
 			device.LocalDeviceInfo = USBDevice{}
 		} else {
+			_ = d.logger.Log("msg", "Processing non-empty virtual port", "port", port, "status", status, "busId", busId)
 			err = d.describeUsbFromBusId(device, busId)
 			if err != nil {
 				return errors.Wrapf(err, "failed to describe device %s", busId)
@@ -259,7 +263,7 @@ func (d *sysfsVHCIDriver) AttachDevice(conn *net.TCPConn, deviceId uint32, speed
 
 func (d *sysfsVHCIDriver) doAttachDevice(port VirtualPort, fd uint, deviceId uint32, speed USBDeviceSpeed) error {
 	attachPath := path.Join(hostControllerPath(), "attach")
-	attachStr := fmt.Sprintf("%d %d %d %d\n", port, fd, deviceId, speed)
+	attachStr := fmt.Sprintf("%d %d %d %d", port, fd, deviceId, speed)
 	return d.writeStringToFile(attachPath, attachStr)
 }
 
@@ -268,7 +272,7 @@ func (d *sysfsVHCIDriver) DetachDevice(port VirtualPort) error {
 		return errors.Newf("port number %d out of bounds", port)
 	}
 	detachPath := path.Join(hostControllerPath(), "detach")
-	detachStr := fmt.Sprintf("%d\n", port)
+	detachStr := fmt.Sprintf("%d", port)
 	return d.writeStringToFile(detachPath, detachStr)
 }
 
@@ -288,9 +292,15 @@ func (d *sysfsVHCIDriver) writeStringToFile(path string, content string) error {
 	return nil
 }
 
-func NewSysfsVHCIDriver(fsys fs.FS) (VHCIDriver, error) {
+func NewSysfsVHCIDriver(fsys fs.FS, logger log.Logger) (VHCIDriver, error) {
+
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
 	driver := &sysfsVHCIDriver{
-		fsys: fsys,
+		fsys:   fsys,
+		logger: logger,
 	}
 
 	err := driver.initPorts()
@@ -302,6 +312,8 @@ func NewSysfsVHCIDriver(fsys fs.FS) (VHCIDriver, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	_ = logger.Log("msg", "Initialized VHCI driver", "nports", len(driver.AttachedDevices), "ncontrollers", driver.AvailableControllers)
 
 	err = driver.UpdateAttachedDevices()
 	if err != nil {
