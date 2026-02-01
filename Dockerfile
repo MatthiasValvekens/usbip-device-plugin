@@ -1,5 +1,5 @@
 # Use golang:latest as a builder for the plugin
-FROM --platform=$BUILDPLATFORM golang:alpine AS plugin-builder
+FROM --platform=$BUILDPLATFORM golang:latest AS plugin-builder
 
 # Bring TARGETPLATFORM to the build scope
 ARG TARGETPLATFORM
@@ -21,9 +21,9 @@ RUN xx-go build -o usbip-device-plugin && xx-verify usbip-device-plugin
 
 
 #Start from a new image.
-FROM --platform=$TARGETPLATFORM alpine:latest
+FROM --platform=$TARGETPLATFORM gcr.io/distroless/base-nossl-debian13:latest
 
 
-COPY --from=plugin-builder /app/usbip-device-plugin /app/usbip-device-plugin
+COPY --from=plugin-builder /app/usbip-device-plugin /usbip-device-plugin
 
-CMD ["/app/usbip-device-plugin"]
+ENTRYPOINT ["/usbip-device-plugin"]
