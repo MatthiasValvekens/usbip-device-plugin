@@ -156,7 +156,6 @@ func (dm *DeviceManager) Start() error {
 		time.Sleep(10 * time.Second)
 	}
 
-	_ = dm.logger.Log("msg", "Enumerating attached devices...")
 	if err := dm.enumerateAttachedDevices(); err != nil {
 		return errors.Wrapf(err, "Failed to enumerate attached devices.")
 	}
@@ -220,8 +219,11 @@ func (dm *DeviceManager) refreshTarget(target usbip.Target) ([]string, error) {
 
 func (dm *DeviceManager) enumerateAttachedDevices() error {
 	vhci := dm.vhciDriver
+	slots := vhci.GetDeviceSlots()
 
-	for _, attachedDev := range vhci.GetDeviceSlots() {
+	_ = dm.logger.Log("msg", "Enumerating attached devices...", "slots", len(slots))
+
+	for _, attachedDev := range slots {
 		if !attachedDev.IsDeviceConnected() {
 			continue
 		}
