@@ -68,8 +68,8 @@ spec:
         - operator: "Exists"
           effect: "NoSchedule"
       containers:
-        - image: ghcr.io/matthiasvalvekens/usbip-device-plugin
-          imagePullPolicy: Always
+        - image: ghcr.io/matthiasvalvekens/usbip-device-plugin@sha256:...
+          imagePullPolicy: IfNotPresent
           name: usbip-device-plugin
           resources:
             requests:
