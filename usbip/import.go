@@ -117,7 +117,7 @@ func Detach(port driver.VirtualPort, vhci driver.VHCIDriver) error {
 
 	for i := 0; i < waitForDeviceReadyAttempts; i++ {
 		err = vhci.UpdateAttachedDevices()
-		if vhci.GetDeviceSlots()[port].IsEmpty() {
+		if err == nil && vhci.GetDeviceSlots()[port].IsEmpty() {
 			break
 		}
 		time.Sleep(waitForDeviceReadyStep)
