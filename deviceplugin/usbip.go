@@ -126,7 +126,7 @@ func (dm *DeviceManager) AddRefreshJob(group *run.Group) {
 					changedDevices, err := dm.refreshDevices()
 					if err != nil {
 						_ = dm.logger.Log("msg", "error refreshing devices", "err", err)
-						return err
+						continue
 					}
 					for _, sub := range dm.subscribers {
 						// we assume this doesn't block _too_ much
